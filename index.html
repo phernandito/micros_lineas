@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>SucreRutas — Micros y Transporte Libre</title>
-  
+  <title>SucreRutas — Guía de Micros de Sucre</title>
+
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  
+
   <!-- Leaflet CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -16,1133 +16,1117 @@
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <!-- Google Fonts: Inter -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
   <style>
-    html, body {
-      height: 100dvh;
-      width: 100%;
-      margin: 0;
-      padding: 0;
+    body {
       font-family: 'Inter', sans-serif;
       overscroll-behavior: none;
-      overflow: hidden;
     }
     #map {
-      position: absolute;
-      inset: 0;
       width: 100%;
       height: 100%;
-      z-index: 1;
-      background-color: #e2e8f0;
+      z-index: 10;
     }
-    /* Custom Leaflet Popup */
-    .leaflet-popup-content-wrapper {
-      border-radius: 0.875rem;
-      padding: 0;
-      overflow: hidden;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Etiquetas flotantes en el mapa */
+    .route-pin-label {
+      font-family: 'Inter', sans-serif;
+      font-weight: 800;
+      font-size: 11px;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
     }
-    .leaflet-popup-content {
-      margin: 0;
-      width: 235px !important;
+
+    /* Animación de pulso para ubicación GPS */
+    @keyframes gps-pulse {
+      0% { transform: scale(0.9); opacity: 0.9; }
+      70% { transform: scale(2.3); opacity: 0; }
+      100% { transform: scale(2.3); opacity: 0; }
     }
-    /* Animación sutil para paradas */
-    @keyframes pulse-ring {
-      0% { transform: scale(0.85); opacity: 0.8; }
-      100% { transform: scale(2.1); opacity: 0; }
-    }
-    .stop-pulse::before {
+    .gps-dot::before {
       content: '';
       position: absolute;
-      inset: -3px;
+      inset: -4px;
       border-radius: 9999px;
-      background-color: inherit;
-      animation: pulse-ring 2.2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+      background-color: #0284c7;
+      animation: gps-pulse 2s infinite;
       z-index: -1;
     }
   </style>
 </head>
-<body class="relative bg-slate-900 text-slate-900 select-none">
+<body class="h-full w-full bg-slate-950 text-slate-100 overflow-hidden relative select-none">
 
-  <!-- ================= MAPA FULLSCREEN (100% PANTALLA) ================= -->
-  <div id="map"></div>
+  <!-- ================= MAPA AL 100% DE LA PANTALLA ================= -->
+  <div id="map" class="absolute inset-0"></div>
 
-  <!-- ================= BARRA SUPERIOR FLOTANTE COMPACTA (ESTILO APP) ================= -->
-  <header class="fixed top-0 left-0 right-0 z-20 p-2.5 sm:p-3 pointer-events-none flex flex-col items-center gap-2">
-    <div class="w-full max-w-xl pointer-events-auto flex flex-col gap-2">
+  <!-- ================= BARRA SUPERIOR COMPACTA (ESTILO APP MÓVIL) ================= -->
+  <header class="absolute top-3 left-3 right-3 z-30 flex flex-col gap-2 pointer-events-none">
+    <div class="flex items-center gap-2 pointer-events-auto max-w-2xl w-full mx-auto">
       
-      <!-- Fila 1: Selector principal de líneas + botones rápidos -->
-      <div class="bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/90 p-1.5 flex items-center gap-1.5">
-        <!-- Logo compacto -->
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-red-600 flex items-center justify-center text-white shrink-0 shadow-sm" title="SucreRutas">
+      <!-- Selector Desplegable de Línea de Micro -->
+      <div class="relative flex-1 bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-200/90 flex items-center overflow-hidden">
+        <div id="selectedColorStrip" class="w-2.5 self-stretch bg-red-600 shrink-0 transition-colors"></div>
+        <div class="pl-2.5 pr-1 text-slate-500">
           <i data-lucide="bus" class="w-4 h-4"></i>
         </div>
+        <select 
+          id="routeSelector" 
+          onchange="onSelectRouteDropdown(this.value)"
+          class="w-full py-3 pl-1 pr-8 bg-transparent font-extrabold text-xs sm:text-sm text-slate-900 appearance-none focus:outline-none truncate cursor-pointer"
+        >
+          <option value="">-- Elige una línea de micro --</option>
+        </select>
+        <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500 absolute right-3 pointer-events-none"></i>
+      </div>
 
-        <!-- Selector desplegable principal estilo captura -->
-        <div class="relative flex-1 min-w-0">
-          <select 
-            id="routeSelect" 
-            onchange="onSelectDropdownChange(this.value)"
-            class="w-full appearance-none bg-slate-50 hover:bg-slate-100 text-slate-900 font-bold text-xs sm:text-sm rounded-xl pl-3 pr-8 py-2.5 border border-slate-200 focus:outline-none focus:border-amber-500 truncate cursor-pointer transition"
-          >
-            <option value="">-- Elige una línea de micro o color --</option>
-            <optgroup label="📍 Mis Tracks Reales (Gaia GPS)">
-              <option value="gaia-m1">Micro 1 (Lajastambo – Centro)</option>
-              <option value="gaia-10-norte">Línea 10 Norte (H. Siles – Noroeste)</option>
-              <option value="gaia-10-sur">Línea 10 Sur (Centro – Zona Sur)</option>
-              <option value="gaia-m5">Micro 5 (Centro – Zona Sur)</option>
-              <option value="gaia-m12">Micro 12 (Centro – La Recoleta)</option>
-              <option value="gaia-m14">Micro 14 (Centro – Zona Este)</option>
-            </optgroup>
-            <optgroup label="🚩 Transporte Libre (Plan Piloto Colores)">
-              <option value="libre-azul">Línea Azul (Barrio Japón – Centro)</option>
-              <option value="libre-lila">Línea Lila (La Calancha – Centro)</option>
-              <option value="libre-naranja">Línea Naranja (La Barranca – Centro)</option>
-              <option value="libre-amarilla">Línea Amarilla (Villa Marlecita – Centro)</option>
-              <option value="libre-celeste">Línea Celeste (K'uchu Tambo – Centro)</option>
-            </optgroup>
-            <optgroup label="🚌 Líneas K y Q (Ida / Vuelta)">
-              <option value="ref-k">Línea K (Libertadores – Campesino)</option>
-              <option value="ref-q-amarilla">Línea Q Amarilla (Alto Sucre – B. Bolivia)</option>
-              <option value="ref-q-rosada">Línea Q Rosada (Buenos Aires – V. Armonía)</option>
-            </optgroup>
-          </select>
-          <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-        </div>
+      <!-- Botón Tarifas Micros -->
+      <button onclick="openModal('tarifasModal')" class="h-11 px-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow-xl flex items-center gap-1 shrink-0 transition active:scale-95" title="Tarifas oficiales de micros">
+        <span>Bs</span>
+      </button>
 
-        <!-- Botón Tarifas -->
-        <button onclick="openModal('tarifasModal')" class="px-2.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center gap-1 shrink-0 shadow-sm transition" title="Ver Tarifas y Calculadora">
-          <i data-lucide="coins" class="w-3.5 h-3.5"></i>
-          <span>Bs</span>
+      <!-- Botón Ajustes / Subir KML / Descargar para GitHub -->
+      <button onclick="openModal('settingsModal')" class="h-11 w-11 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-white border border-slate-700 shadow-xl flex items-center justify-center shrink-0 transition active:scale-95" title="Subir KML o descargar para GitHub">
+        <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Fila secundaria: Modo "¿Qué micro tomo?" + Controles rápidos -->
+    <div class="flex items-center justify-between gap-2 pointer-events-auto max-w-2xl w-full mx-auto">
+      <button id="toggleFinderBtn" onclick="toggleRouteFinder()" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-950/50 border border-indigo-400/40 flex items-center gap-1.5 transition active:scale-95">
+        <i data-lucide="navigation" class="w-3.5 h-3.5"></i>
+        <span>¿Qué micro tomo? (A → B)</span>
+      </button>
+
+      <div class="flex items-center gap-1.5">
+        <button onclick="toggleAllRoutesView()" id="btnVerTodas" class="px-2.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/90 text-[11px] font-semibold shadow-lg transition">
+          Ver todas
         </button>
-
-        <!-- Botón Más Opciones / Subir KML / GitHub -->
-        <button onclick="openModal('menuModal')" class="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white shrink-0 shadow-sm transition" title="Más opciones, subir KML y descarga">
-          <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
-        </button>
-      </div>
-
-      <!-- Fila 2: Píldoras táctiles compactas de control del mapa -->
-      <div class="flex items-center justify-between gap-1.5 px-0.5 overflow-x-auto">
-        <div class="flex items-center gap-1.5">
-          <!-- Botón "¿Qué tomo?" -->
-          <button id="trufiModeBtn" onclick="toggleTrufiFinder()" class="px-2.5 py-1.5 rounded-full bg-indigo-600/95 backdrop-blur-md hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1 shadow-md transition">
-            <i data-lucide="navigation" class="w-3 h-3"></i>
-            <span>¿Qué tomo?</span>
+        <div class="relative">
+          <button onclick="toggleMapLayerMenu()" class="px-2.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/90 text-[11px] font-semibold shadow-lg flex items-center gap-1 transition">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span id="mapStyleText">Mapa</span>
           </button>
-
-          <!-- Botón Ver Todas / Limpiar -->
-          <button id="toggleAllBtn" onclick="toggleShowAllRoutes()" class="px-2.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md hover:bg-slate-100 text-slate-800 border border-slate-200 text-[11px] font-bold flex items-center gap-1 shadow-md transition">
-            <i data-lucide="layers" class="w-3 h-3 text-amber-600"></i>
-            <span id="toggleAllLabel">Ver todas</span>
-          </button>
-
-          <!-- Botón Paradas -->
-          <button id="stopsToggleBtn" onclick="toggleStopsLayer()" class="px-2.5 py-1.5 rounded-full bg-emerald-600/95 backdrop-blur-md text-white text-[11px] font-bold flex items-center gap-1 shadow-md transition">
-            <i data-lucide="map-pin" class="w-3 h-3"></i>
-            <span>Paradas</span>
-          </button>
-        </div>
-
-        <div class="flex items-center gap-1.5">
-          <!-- Selector tipo de mapa -->
-          <button onclick="cycleBaseLayer()" class="px-2.5 py-1.5 rounded-full bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-semibold flex items-center gap-1 shadow-md transition" title="Cambiar fondo de mapa">
-            <i data-lucide="map" class="w-3 h-3 text-sky-400"></i>
-            <span id="mapLayerBadge">Calles</span>
-          </button>
-
-          <!-- Mi GPS -->
-          <button onclick="locateUserOnMap()" class="p-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-800 border border-slate-200 shadow-md transition" title="Mi ubicación GPS">
-            <i data-lucide="locate-fixed" class="w-3.5 h-3.5 text-sky-600"></i>
-          </button>
+          <div id="mapLayerMenu" class="hidden absolute right-0 mt-1.5 w-48 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-1 text-xs space-y-1 z-40">
+            <button onclick="setBaseMap('street')" class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-800 text-slate-100 font-medium">🗺️ Calles (Esri)</button>
+            <button onclick="setBaseMap('satellite')" class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-800 text-slate-100 font-medium">🛰️ Satélite (Esri)</button>
+            <button onclick="setBaseMap('offline')" class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-800 text-amber-300 font-semibold">📴 Sin Internet (Local)</button>
+          </div>
         </div>
       </div>
-
-      <!-- Banner Modo "¿Qué línea me lleva?" (Solo aparece si se activa) -->
-      <div id="trufiFinderBanner" class="hidden bg-indigo-950/95 backdrop-blur-md text-white rounded-2xl p-3 shadow-2xl border border-indigo-500/40 text-xs">
-        <div class="flex items-center justify-between mb-1">
-          <span class="font-bold text-indigo-200 flex items-center gap-1.5">
-            <i data-lucide="compass" class="w-3.5 h-3.5 text-indigo-400"></i>
-            Buscador Origen → Destino
-          </span>
-          <button onclick="toggleTrufiFinder()" class="text-[11px] text-indigo-300 underline">Cerrar</button>
-        </div>
-        <p id="trufiInstruction" class="text-[11px] text-indigo-100 mb-2">
-          1️⃣ Toca en el mapa dónde estás (<b>ORIGEN</b>) o usa tu GPS.
-        </p>
-        <div class="flex items-center gap-2">
-          <button onclick="useMyGPSForOrigin()" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1">
-            <i data-lucide="locate-fixed" class="w-3 h-3"></i> Mi GPS
-          </button>
-          <button onclick="resetTrufiPoints()" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px]">
-            Reiniciar
-          </button>
-        </div>
-        <div id="trufiResultsBox" class="mt-2 space-y-1 max-h-28 overflow-y-auto"></div>
-      </div>
-
     </div>
   </header>
 
-  <!-- ================= TARJETA FLOTANTE INFERIOR COMPACTA (ESTILO CAPTURAS) ================= -->
-  <section id="floatingRouteCard" class="hidden fixed bottom-3 left-2.5 right-2.5 sm:left-1/2 sm:-translate-x-1/2 sm:w-[440px] z-20 bg-white/98 backdrop-blur-md text-slate-900 rounded-2xl shadow-2xl border border-slate-200 p-3.5 transition-all duration-200">
-    <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-2 min-w-0">
-        <span id="cardBadge" class="px-3 py-1 rounded-lg font-extrabold text-xs uppercase tracking-wide text-white shadow-sm shrink-0">
-          LINEA K
+  <!-- ================= PANEL FLOTANTE: BUSCADOR PUNTO A -> PUNTO B Y GPS ================= -->
+  <section id="finderPanel" class="hidden absolute top-28 left-3 right-3 z-30 max-w-md mx-auto bg-slate-900/95 backdrop-blur-md border border-indigo-500/40 rounded-2xl shadow-2xl p-3.5 text-slate-100">
+    <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+      <div class="flex items-center gap-1.5">
+        <span class="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-pulse"></span>
+        <h2 class="font-extrabold text-xs uppercase tracking-wider text-indigo-300">Buscador de Micro Cercano</h2>
+      </div>
+      <button onclick="toggleRouteFinder()" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Dos modos rápidos: Mi GPS -> Destino ó Punto A -> Punto B -->
+    <div class="grid grid-cols-2 gap-1.5 mt-2.5">
+      <button onclick="startGPSOriginMode()" class="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 shadow transition active:scale-95">
+        <i data-lucide="locate-fixed" class="w-3.5 h-3.5"></i>
+        <span>Desde Mi GPS → B</span>
+      </button>
+      <button onclick="startManualABMode()" class="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95">
+        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>Marcar A → B en mapa</span>
+      </button>
+    </div>
+
+    <!-- Indicador de estado de selección -->
+    <div id="finderStepBanner" class="mt-2.5 p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 text-xs">
+      <p id="finderStepText" class="text-slate-200 leading-snug">
+        1️⃣ Toca en el mapa tu <b>Punto A (Origen)</b> o presiona <b>Desde Mi GPS → B</b>.
+      </p>
+      <div class="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-800/80 text-[11px]">
+        <span id="pointAStatus" class="text-slate-400">A: Sin marcar</span>
+        <span id="pointBStatus" class="text-slate-400">B: Sin marcar</span>
+        <button onclick="resetABPoints()" class="text-amber-400 hover:underline font-semibold">Limpiar A/B</button>
+      </div>
+    </div>
+
+    <!-- Resultados del Ranking de Micros -->
+    <div id="finderResultsContainer" class="hidden mt-2.5 space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+      <!-- Se llena dinámicamente con los micros más cercanos -->
+    </div>
+  </section>
+
+  <!-- ================= BOTÓN FLOTANTE MI UBICACIÓN GPS ================= -->
+  <button onclick="centerOnUserGPS()" class="fixed bottom-5 right-3 z-20 w-11 h-11 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-sky-400 border border-slate-700 shadow-xl flex items-center justify-center transition active:scale-95" title="Centrar en mi ubicación GPS">
+    <i data-lucide="crosshair" class="w-5 h-5"></i>
+  </button>
+
+  <!-- ================= TARJETA FLOTANTE INFERIOR DE LÍNEA SELECCIONADA ================= -->
+  <div id="routeBottomCard" class="hidden fixed bottom-3 left-3 right-3 z-30 max-w-xl mx-auto bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200 p-4 transition-all">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <span id="cardLineBadge" class="px-3 py-1 rounded-xl font-black text-xs sm:text-sm uppercase tracking-wide text-white shadow-sm">
+          LÍNEA 10
         </span>
-        <span id="cardTypeBadge" class="text-[11px] font-semibold text-slate-500 truncate">
-          Track Real Gaia
+        <span id="cardSourceTag" class="px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+          Track Gaia GPS
         </span>
       </div>
-      <button onclick="clearSelectedRoute()" class="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition shrink-0" title="Cerrar ruta">
+      <button onclick="closeBottomCard()" class="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
     </div>
 
-    <!-- Leyenda Ida / Vuelta estilo captura -->
-    <div class="flex items-center gap-4 mt-2 text-xs font-bold text-slate-800">
+    <!-- Leyenda de Sentido (Ida / Vuelta) -->
+    <div class="flex items-center gap-4 mt-2.5 text-xs font-extrabold text-slate-800">
       <div class="flex items-center gap-1.5">
-        <span id="cardColorDot" class="w-3 h-3 rounded-full bg-red-600 inline-block"></span>
-        <span id="cardDirectionLabel">IDA</span>
+        <span id="cardMainDot" class="w-3 h-3 rounded-full inline-block border border-black/20"></span>
+        <span id="cardMainDirLabel">IDA / RECORRIDO</span>
       </div>
-      <div id="cardReturnIndicator" class="hidden items-center gap-1.5">
-        <span class="w-3 h-3 rounded-full bg-sky-500 inline-block"></span>
+      <div id="cardReturnBadge" class="hidden items-center gap-1.5">
+        <span class="w-3 h-3 rounded-full bg-sky-600 inline-block"></span>
         <span>VUELTA</span>
-      </div>
-      <div id="cardStartEndLegend" class="flex items-center gap-2 text-[11px] font-medium text-slate-500 ml-auto">
-        <span>🟢 Inicio</span>
-        <span>🔴 Fin</span>
       </div>
     </div>
 
     <!-- Descripción del recorrido -->
-    <p id="cardDescription" class="text-xs text-slate-700 mt-1.5 leading-snug">
-      Comunica Barrio Libertadores con el Mercado Campesino atravesando el centro histórico.
+    <p id="cardRouteDesc" class="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Recorrido del micro...
     </p>
 
-    <!-- Parada y Frecuencia en caja compacta -->
-    <div class="mt-2 p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] space-y-1">
-      <div class="flex items-center gap-1.5 font-semibold text-slate-800">
-        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-red-500 shrink-0"></i>
-        <span id="cardStopText" class="truncate">Parada: Plazuela Zudáñez</span>
+    <!-- Calles y puntos clave por donde pasa -->
+    <div class="mt-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs">
+      <div class="font-bold text-slate-800 flex items-center gap-1.5 mb-0.5">
+        <i data-lucide="signpost" class="w-3.5 h-3.5 text-red-600 shrink-0"></i>
+        <span>Calles y sectores clave:</span>
       </div>
-      <div class="flex items-center justify-between gap-2 text-slate-600">
-        <span id="cardFareSummary" class="font-bold text-amber-700">Adulto Bs 4 • Univ Bs 2 • Esc Bs 1</span>
-        <button onclick="shareCurrentRoute()" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shrink-0 transition">
-          <i data-lucide="share-2" class="w-3 h-3"></i>
-          <span>Pasar</span>
-        </button>
-      </div>
+      <p id="cardStreetsList" class="text-slate-600 text-[11px] sm:text-xs leading-snug">
+        Av. Hernando Siles, Centro Histórico...
+      </p>
     </div>
-  </section>
 
-  <!-- Toast Notification -->
-  <div id="toast" class="hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-slate-900/95 text-white text-xs font-semibold shadow-xl border border-slate-700 flex items-center gap-2 whitespace-nowrap">
-    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
-    <span id="toastMsg">Listo</span>
+    <!-- Si está activo el cálculo A -> B, muestra detalle de caminata -->
+    <div id="cardWalkSummary" class="hidden mt-2 p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-950 font-medium">
+    </div>
+
+    <!-- Pie de tarjeta: Tarifa Micro y Compartir -->
+    <div class="mt-3 pt-2.5 border-t border-slate-200 flex items-center justify-between gap-2">
+      <div class="text-[11px] sm:text-xs font-bold text-slate-700">
+        Micro: <span class="text-slate-950">Bs 4</span> • Univ: <span class="text-amber-600">Bs 2</span> • Esc: <span class="text-emerald-600">Bs 1</span>
+      </div>
+      <button onclick="shareRouteWhatsApp()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 shadow transition active:scale-95">
+        <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+        <span>Compartir</span>
+      </button>
+    </div>
   </div>
 
-  <!-- ================= MODAL: TARIFARIO Y CALCULADORA ================= -->
-  <div id="tarifasModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl max-w-lg w-full max-h-[88dvh] overflow-y-auto shadow-2xl p-4 sm:p-5 text-slate-100">
+  <!-- ================= MODAL: TARIFAS OFICIALES DE MICROS ================= -->
+  <div id="tarifasModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl text-slate-100">
       <div class="flex items-center justify-between pb-3 border-b border-slate-800">
         <div class="flex items-center gap-2">
-          <div class="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+          <div class="p-2 rounded-xl bg-amber-400/20 text-amber-300">
             <i data-lucide="coins" class="w-5 h-5"></i>
           </div>
           <div>
-            <h2 class="font-bold text-base text-white">Tarifas Oficiales Sucre</h2>
-            <p class="text-[11px] text-slate-400">Micros y Plan Piloto Transporte Libre (05:30 - 22:00)</p>
+            <h2 class="font-extrabold text-base text-white">Tarifas Oficiales de Micros</h2>
+            <p class="text-xs text-slate-400">Sucre • Servicio de Microbuses</p>
           </div>
         </div>
-        <button onclick="closeModal('tarifasModal')" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
+        <button onclick="closeModal('tarifasModal')" class="p-1.5 rounded-lg text-slate-400 hover:text-white">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
-        <!-- Micros -->
-        <div class="p-3 rounded-xl bg-slate-800/80 border border-slate-700">
-          <span class="text-xs font-bold uppercase text-red-400 block mb-1.5">🚌 Micros (Nuevas Tarifas)</span>
-          <ul class="space-y-1 text-xs">
-            <li class="flex justify-between"><span>Adultos:</span><b class="text-white">Bs 4</b></li>
-            <li class="flex justify-between"><span>Adultos mayores:</span><b class="text-white">Bs 3</b></li>
-            <li class="flex justify-between"><span>Universitarios:</span><b class="text-amber-400">Bs 2</b></li>
-            <li class="flex justify-between"><span>Escolares / Colegiales:</span><b class="text-emerald-400">Bs 1</b></li>
-            <li class="pt-1 border-t border-slate-700 text-[11px] text-slate-300">
-              ✨ <b>Gratis (Bs 0):</b> Discapacidad y menores de 5 años.
-            </li>
-          </ul>
+      <div class="mt-4 space-y-2 text-sm">
+        <div class="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between">
+          <span class="font-medium text-slate-200">🧑 Adultos (General)</span>
+          <span class="font-black text-white text-base">Bs 4</span>
         </div>
-
-        <!-- Transporte Libre -->
-        <div class="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex flex-col justify-between">
-          <div>
-            <span class="text-xs font-bold uppercase text-cyan-400 block mb-1.5">🚩 Transporte Libre (Colores)</span>
-            <ul class="space-y-1 text-xs mb-2">
-              <li class="flex justify-between"><span>Minibús Mayores:</span><b class="text-white">Bs 3</b></li>
-              <li class="flex justify-between"><span>Minibús Universitarios:</span><b class="text-amber-400">Bs 2</b></li>
-              <li class="flex justify-between"><span>Minibús Escolares:</span><b class="text-emerald-400">Bs 1</b></li>
-            </ul>
-          </div>
-          <div class="p-2 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-between text-xs">
-            <span>🚕 <b>Taxis</b> (Tarifa única):</span>
-            <span class="font-extrabold text-cyan-300 text-sm">Bs 5</span>
-          </div>
+        <div class="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between">
+          <span class="font-medium text-slate-200">👴 Adultos mayores</span>
+          <span class="font-black text-sky-300 text-base">Bs 3</span>
+        </div>
+        <div class="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between">
+          <span class="font-medium text-slate-200">🎓 Universitarios</span>
+          <span class="font-black text-amber-300 text-base">Bs 2</span>
+        </div>
+        <div class="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between">
+          <span class="font-medium text-slate-200">🎒 Escolares / Colegiales</span>
+          <span class="font-black text-emerald-300 text-base">Bs 1</span>
+        </div>
+        <div class="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs text-emerald-200">
+          ✨ <b>Pasaje Gratuito (Bs 0):</b> Personas con discapacidad y niños menores de 5 años.
         </div>
       </div>
 
       <!-- Calculadora rápida -->
-      <div class="mt-3 p-3 rounded-xl bg-slate-950 border border-slate-800">
+      <div class="mt-4 p-3.5 rounded-xl bg-slate-950 border border-slate-800">
         <div class="flex items-center justify-between mb-2">
-          <span class="text-xs font-bold text-amber-300">🧮 Calculadora rápida de pasajes</span>
-          <button onclick="resetCalc()" class="text-[11px] text-slate-400 underline">Limpiar</button>
+          <span class="text-xs font-bold text-amber-300">Calculadora rápida de pasajes</span>
+          <button onclick="resetFareCalc()" class="text-[11px] text-slate-400 hover:text-white underline">Reiniciar</button>
         </div>
-
-        <div class="grid grid-cols-3 gap-1.5 mb-2.5">
-          <button onclick="setCalcVehicle('micro')" id="calcVeh_micro" class="py-1.5 px-2 rounded-lg text-xs font-bold bg-amber-500 text-slate-950">Micro</button>
-          <button onclick="setCalcVehicle('minibus')" id="calcVeh_minibus" class="py-1.5 px-2 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300">Minibús Libre</button>
-          <button onclick="setCalcVehicle('taxi')" id="calcVeh_taxi" class="py-1.5 px-2 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300">Taxi (Bs 5)</button>
-        </div>
-
         <div class="grid grid-cols-4 gap-1.5 text-center">
-          <button onclick="addPassenger('mayor')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
-            <div class="text-[10px] text-slate-300">+Mayor</div>
-            <div id="count_mayor" class="font-bold text-sm text-white">0</div>
+          <button onclick="addFareCount('adulto')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
+            <div class="text-[10px] text-slate-300">+Adulto</div>
+            <div id="fc_adulto" class="font-bold text-sm text-white">0</div>
           </button>
-          <button onclick="addPassenger('univ')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
-            <div class="text-[10px] text-amber-300">+Univ</div>
-            <div id="count_univ" class="font-bold text-sm text-white">0</div>
+          <button onclick="addFareCount('mayor')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
+            <div class="text-[10px] text-sky-300">+Ad.Mayor</div>
+            <div id="fc_mayor" class="font-bold text-sm text-white">0</div>
           </button>
-          <button onclick="addPassenger('adultoMayor')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
-            <div class="text-[10px] text-sky-300">+A.Mayor</div>
-            <div id="count_adultoMayor" class="font-bold text-sm text-white">0</div>
+          <button onclick="addFareCount('univ')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
+            <div class="text-[10px] text-amber-300">+Univ.</div>
+            <div id="fc_univ" class="font-bold text-sm text-white">0</div>
           </button>
-          <button onclick="addPassenger('escolar')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
+          <button onclick="addFareCount('escolar')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
             <div class="text-[10px] text-emerald-300">+Escolar</div>
-            <div id="count_escolar" class="font-bold text-sm text-white">0</div>
+            <div id="fc_escolar" class="font-bold text-sm text-white">0</div>
           </button>
         </div>
-
         <div class="mt-2.5 pt-2 border-t border-slate-800 flex items-center justify-between">
           <span class="text-xs text-slate-400">Total a pagar:</span>
-          <span id="calcTotalDisplay" class="text-lg font-extrabold text-emerald-400">Bs 0</span>
+          <span id="fc_total" class="text-lg font-black text-emerald-400">Bs 0</span>
         </div>
-      </div>
-
-      <!-- Datos operativos Plan Piloto -->
-      <div class="mt-3 p-2.5 rounded-xl bg-indigo-950/60 border border-indigo-500/30 text-[11px] text-indigo-200">
-        <b>Operación Transporte Libre:</b> 15 a 20 unidades por parada con banderines del color de su línea. Salidas cada 10-12 min o al llenar capacidad.
       </div>
     </div>
   </div>
 
-  <!-- ================= MODAL: OPCIONES, SUBIR KML Y DESCARGA GITHUB ================= -->
-  <div id="menuModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl max-w-md w-full max-h-[88dvh] overflow-y-auto p-5 shadow-2xl text-slate-100">
+  <!-- ================= MODAL: SUBIR KML DE GAIA GPS Y DESCARGAR INDEX.HTML ================= -->
+  <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 shadow-2xl text-slate-100 space-y-4">
       <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-        <h2 class="font-bold text-base text-white flex items-center gap-2">
-          <i data-lucide="sliders-horizontal" class="w-4 h-4 text-amber-400"></i>
-          Herramientas y GitHub Pages
-        </h2>
-        <button onclick="closeModal('menuModal')" class="p-1.5 rounded-lg text-slate-400 hover:text-white">
+        <h2 class="font-extrabold text-base text-white">Rutas KML y Publicar en GitHub</h2>
+        <button onclick="closeModal('settingsModal')" class="p-1.5 rounded-lg text-slate-400 hover:text-white">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
-      <div class="space-y-4 mt-4 text-xs">
-        <!-- Subir más KML -->
-        <div class="p-3.5 rounded-2xl bg-slate-800/70 border border-slate-700 space-y-2.5">
-          <div class="font-bold text-white flex items-center gap-1.5">
-            <i data-lucide="upload-cloud" class="w-4 h-4 text-emerald-400"></i>
-            Importar nuevo archivo .KML de Gaia GPS
-          </div>
-          <p class="text-slate-300 text-[11px]">
-            Agrega recorridos nuevos que grabes en tu teléfono. Se suman al selector superior al instante.
-          </p>
-          <div class="flex items-center gap-2">
-            <input type="color" id="customKmlColor" value="#10b981" class="w-10 h-9 rounded-lg bg-slate-900 border border-slate-600 cursor-pointer" title="Color de la línea" />
-            <label class="flex-1 py-2 px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-semibold text-center cursor-pointer transition">
-              Seleccionar .KML
-              <input type="file" id="kmlFileInput" accept=".kml,.xml" class="hidden" onchange="handleKMLUpload(event)" />
-            </label>
-          </div>
+      <!-- Importar KML -->
+      <div class="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700 space-y-2.5">
+        <div class="font-bold text-xs text-emerald-300 flex items-center gap-1.5">
+          <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+          <span>Agregar más recorridos (.KML de Gaia GPS)</span>
         </div>
+        <p class="text-[11px] text-slate-300 leading-relaxed">
+          Sube nuevos archivos <code>.kml</code> exportados desde Gaia GPS para sumarlos al selector de micros.
+        </p>
+        <div class="flex items-center gap-2">
+          <input type="color" id="newKmlColor" value="#e11d48" class="h-9 w-12 rounded-lg bg-slate-900 border border-slate-700 cursor-pointer p-0.5" title="Color de la línea" />
+          <label class="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-950 border border-slate-600 text-xs font-bold text-center cursor-pointer transition">
+            Seleccionar archivo .KML
+            <input type="file" accept=".kml,.xml" class="hidden" onchange="importGaiaKML(event)" />
+          </label>
+        </div>
+      </div>
 
-        <!-- Descarga directa como index.html -->
-        <div class="p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-500/30 space-y-2.5">
-          <div class="font-bold text-emerald-300 flex items-center gap-1.5">
-            <i data-lucide="github" class="w-4 h-4"></i>
-            Listo para GitHub Pages (Sin API Keys)
-          </div>
-          <p class="text-slate-300 text-[11px] leading-relaxed">
-            Este archivo ya usa mapas abiertos de <b>Esri</b> (sin error de API key) y diseño adaptado a celular. Descárgalo ya nombrado como <code>index.html</code> y súbelo directo a tu repositorio de GitHub.
-          </p>
-          <button onclick="downloadStandaloneHTML()" class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition">
-            <i data-lucide="download" class="w-4 h-4"></i>
-            <span>Descargar index.html</span>
-          </button>
+      <!-- Descargar para GitHub Pages -->
+      <div class="p-3.5 rounded-xl bg-indigo-950/50 border border-indigo-500/30 space-y-2.5">
+        <div class="font-bold text-xs text-indigo-300 flex items-center gap-1.5">
+          <i data-lucide="github" class="w-4 h-4"></i>
+          <span>Subir a GitHub Pages</span>
         </div>
+        <p class="text-[11px] text-slate-300 leading-relaxed">
+          Descarga este archivo ya nombrado como <b><code>index.html</code></b> y súbelo a tu repositorio público en GitHub (Settings → Pages → Branch: <i>main</i>) para compartir el enlace por WhatsApp.
+        </p>
+        <button onclick="downloadIndexHTML()" class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span>Descargar index.html para GitHub</span>
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- ================= JAVASCRIPT: DATOS Y LÓGICA DEL MAPA ================= -->
+  <!-- Toast -->
+  <div id="toast" class="hidden fixed top-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 text-white text-xs font-bold shadow-2xl border border-slate-700">
+    <span id="toastText">Listo</span>
+  </div>
+
   <script>
     // =========================================================================
-    // 1. BASE DE DATOS COMPLETA (TRACKS REALES GAIA + PLAN PILOTO + K y Q)
+    // 1. BASE DE DATOS EXCLUSIVA DE MICROS DE SUCRE (KML GAIA GPS + REFERENCIAS)
     // =========================================================================
-    const ROUTES_DATA = [
-      // --- TRACKS REALES DE TU KML DE GAIA GPS ---
+    const MICROS_DATA = [
       {
-        id: 'gaia-m1',
-        name: 'Micro 1 (Lajastambo – Centro)',
+        id: 'micro-1',
+        name: 'MICRO 1 — Lajastambo / Alegría – Centro',
         shortBadge: 'MICRO 1',
-        category: 'gaia',
-        categoryLabel: 'Track Real Gaia GPS',
-        color: '#dc2626',
-        vehicleType: 'micro',
-        direction: 'Lajastambo / Alegría → Centro Histórico',
-        stopName: 'Inicio: Zona Alegría / Lajastambo • Fin: Centro',
-        frequency: 'Servicio regular • Track grabado en Gaia GPS',
-        description: 'Recorrido completo desde la zona de Lajastambo y Alegría bajando hacia el Centro Histórico de Sucre.',
+        color: '#dc2626', // Rojo intenso
+        sourceLabel: 'Track Real Gaia GPS',
+        hasReturn: false,
+        direction: 'Lajastambo • Alegría • Ex-Aeropuerto • Centro Histórico',
+        streets: 'Zona Lajastambo, Av. 6 de Agosto (altura Ex-Aeropuerto), San Juanillo, Calle Destacamento 111 / Centro Histórico.',
+        description: 'Recorrido troncal que conecta el sector norte (Lajastambo y Alegría) pasando por inmediaciones del Ex-Aeropuerto y San Juanillo hasta el centro de Sucre.',
         coords: [
-          [-19.013537,-65.306959],[-19.014219,-65.305792],[-19.01514,-65.304446],[-19.016278,-65.303126],
-          [-19.018133,-65.303017],[-19.019529,-65.302752],[-19.02101,-65.301204],[-19.021335,-65.300492],
-          [-19.019718,-65.298513],[-19.018759,-65.296718],[-19.01766,-65.294596],[-19.016191,-65.292883],
-          [-19.015137,-65.291533],[-19.013788,-65.290327],[-19.012661,-65.289108],[-19.013203,-65.287414],
-          [-19.014501,-65.285514],[-19.015717,-65.283696],[-19.016679,-65.283215],[-19.018301,-65.283184],
-          [-19.019533,-65.281671],[-19.020908,-65.280519],[-19.022553,-65.280854],[-19.023842,-65.280238],
-          [-19.02517,-65.279605],[-19.025506,-65.278451],[-19.023765,-65.277193],[-19.022424,-65.274917],
-          [-19.02173,-65.2723],[-19.022301,-65.270832],[-19.024108,-65.270126],[-19.024676,-65.268485],
+          [-19.013537,-65.306959],[-19.013967,-65.306174],[-19.014641,-65.305161],[-19.015408,-65.304068],
+          [-19.016278,-65.303126],[-19.018133,-65.303017],[-19.019354,-65.302845],[-19.02101,-65.301204],
+          [-19.021335,-65.300492],[-19.020535,-65.299279],[-19.01954,-65.298283],[-19.018759,-65.296718],
+          [-19.017835,-65.294889],[-19.016887,-65.29367],[-19.015396,-65.292011],[-19.015137,-65.291533],
+          [-19.014314,-65.290914],[-19.013153,-65.289636],[-19.012661,-65.289108],[-19.012716,-65.28818],
+          [-19.01361,-65.286845],[-19.014572,-65.285422],[-19.015717,-65.283696],[-19.016269,-65.283263],
+          [-19.017941,-65.283254],[-19.018869,-65.282692],[-19.019959,-65.280996],[-19.021072,-65.280553],
+          [-19.022388,-65.280874],[-19.023842,-65.280238],[-19.024906,-65.279837],[-19.025422,-65.278971],
+          [-19.025408,-65.277974],[-19.023765,-65.277193],[-19.022424,-65.274917],[-19.02173,-65.2723],
+          [-19.021769,-65.271257],[-19.023021,-65.270534],[-19.024281,-65.269943],[-19.024679,-65.268699],
           [-19.024545,-65.267757],[-19.025373,-65.266814],[-19.027175,-65.265823],[-19.028241,-65.264392],
-          [-19.029811,-65.263097],[-19.031953,-65.262924],[-19.034361,-65.261921],[-19.035774,-65.260467],
-          [-19.036924,-65.25957],[-19.038457,-65.260715],[-19.040008,-65.262108],[-19.041104,-65.262945],
-          [-19.041918,-65.262236]
+          [-19.029376,-65.26329],[-19.031076,-65.263104],[-19.031953,-65.262924],[-19.033488,-65.26239],
+          [-19.034361,-65.261921],[-19.035774,-65.260467],[-19.036924,-65.25957],[-19.038457,-65.260715],
+          [-19.040008,-65.262108],[-19.041104,-65.262945],[-19.041918,-65.262236]
         ]
       },
       {
-        id: 'gaia-10-norte',
-        name: 'Línea 10 Norte (H. Siles – Noroeste)',
+        id: 'linea-10-norte',
+        name: 'LÍNEA 10 (Tramo Norte) — Av. Hernando Siles – Noroeste',
         shortBadge: 'LÍNEA 10 N',
-        category: 'gaia',
-        categoryLabel: 'Track Real Gaia GPS',
-        color: '#2563eb',
-        vehicleType: 'micro',
-        direction: 'Av. Hernando Siles → Sector Noroeste',
-        stopName: 'Inicio: Av. Hernando Siles • Fin: Zona Noroeste',
-        frequency: 'Servicio regular • Track grabado en Gaia GPS',
-        description: 'Tramo de subida de la Línea 10 tomado desde la Av. Hernando Siles hacia los barrios altos del noroeste.',
+        color: '#2563eb', // Azul vibrante
+        sourceLabel: 'Track Real Gaia GPS',
+        hasReturn: false,
+        direction: 'Av. Hernando Siles • San Juanillo • Zona Noroeste',
+        streets: 'Av. Hernando Siles, Parque Bolívar, Av. Jaime Mendoza, subida hacia San Juanillo y barrios del sector Noroeste.',
+        description: 'Tramo de subida de la Línea 10 desde la Av. Hernando Siles hacia el sector noroeste de la ciudad.',
         coords: [
-          [-19.039315,-65.26759],[-19.038671,-65.268488],[-19.037858,-65.269313],[-19.036998,-65.269496],
-          [-19.036236,-65.270663],[-19.036991,-65.271581],[-19.038043,-65.272211],[-19.03918,-65.272281],
-          [-19.03821,-65.272864],[-19.036479,-65.273388],[-19.03543,-65.27309],[-19.034963,-65.273961],
-          [-19.033534,-65.273866],[-19.032725,-65.274538],[-19.03134,-65.274018],[-19.030618,-65.274753],
-          [-19.030275,-65.275985],[-19.030578,-65.277296],[-19.030173,-65.278364],[-19.0303,-65.279326],
-          [-19.02917,-65.28014],[-19.027845,-65.281253],[-19.026203,-65.282152],[-19.024598,-65.28268],
-          [-19.023201,-65.283448],[-19.021636,-65.284678],[-19.020275,-65.285825],[-19.018753,-65.286835],
-          [-19.017053,-65.288358],[-19.015423,-65.290118],[-19.014735,-65.290896]
+          [-19.039315,-65.26759],[-19.039113,-65.268195],[-19.038671,-65.268488],[-19.038341,-65.269118],
+          [-19.037858,-65.269313],[-19.037073,-65.26943],[-19.036945,-65.270028],[-19.03634,-65.270545],
+          [-19.036211,-65.271001],[-19.03665,-65.271418],[-19.037521,-65.271991],[-19.038349,-65.272352],
+          [-19.03918,-65.272281],[-19.039023,-65.272859],[-19.03821,-65.272864],[-19.037351,-65.273095],
+          [-19.036479,-65.273388],[-19.03576,-65.273241],[-19.035073,-65.273145],[-19.035041,-65.273681],
+          [-19.034586,-65.274091],[-19.0337,-65.27395],[-19.033043,-65.273966],[-19.032725,-65.274538],
+          [-19.032033,-65.274491],[-19.03134,-65.274018],[-19.030791,-65.274193],[-19.030541,-65.275144],
+          [-19.030275,-65.275985],[-19.030458,-65.276855],[-19.03066,-65.277598],[-19.030173,-65.278364],
+          [-19.030136,-65.279005],[-19.030281,-65.279652],[-19.029583,-65.279956],[-19.028855,-65.280315],
+          [-19.028211,-65.280902],[-19.027515,-65.281485],[-19.026671,-65.281968],[-19.02569,-65.282353],
+          [-19.024928,-65.282538],[-19.023986,-65.28294],[-19.023158,-65.283483],[-19.022135,-65.284248],
+          [-19.021136,-65.285088],[-19.020275,-65.285825],[-19.01934,-65.286418],[-19.01831,-65.287193],
+          [-19.017465,-65.28802],[-19.016635,-65.288788],[-19.015775,-65.289703],[-19.014735,-65.290896]
         ]
       },
       {
-        id: 'gaia-10-sur',
-        name: 'Línea 10 Sur (Centro – Zona Sur)',
+        id: 'linea-10-sur',
+        name: 'LÍNEA 10 (Tramo Centro / Sur) — Plaza 25 – El Tejar / Sur',
         shortBadge: 'LÍNEA 10 S',
-        category: 'gaia',
-        categoryLabel: 'Track Real Gaia GPS',
-        color: '#7c3aed',
-        vehicleType: 'micro',
-        direction: 'Centro → Zona Sur → Retorno Centro',
-        stopName: 'Inicio: Centro • Punto Sur: -19.0555, -65.2533',
-        frequency: 'Servicio regular • Track grabado en Gaia GPS',
-        description: 'Recorrido de la Línea 10 desde el casco viejo hacia los barrios de la zona sur y retorno.',
+        color: '#0284c7', // Celeste fuerte
+        sourceLabel: 'Track Real Gaia GPS',
+        hasReturn: false,
+        direction: 'Centro Histórico • Zona Sur • Retorno al Centro',
+        streets: 'Calles del Centro Histórico (Junín, España, Bolívar), Bajada Zona Sur, El Tejar y retorno hacia el casco viejo.',
+        description: 'Recorrido de la Línea 10 atravesando el casco histórico y conectando con los barrios de la zona sur.',
         coords: [
-          [-19.045931,-65.259296],[-19.046506,-65.258565],[-19.047846,-65.258348],[-19.05004,-65.254226],
-          [-19.051085,-65.253227],[-19.052165,-65.2526],[-19.053228,-65.25331],[-19.05447,-65.253495],
-          [-19.055565,-65.253315],[-19.05487,-65.253578],[-19.053481,-65.253215],[-19.052131,-65.253459],
-          [-19.050876,-65.255036],[-19.049643,-65.25648],[-19.048596,-65.257755],[-19.047805,-65.258891],
-          [-19.046976,-65.259778],[-19.04609,-65.260925],[-19.04507,-65.262012],[-19.043955,-65.262668],
-          [-19.042808,-65.261955]
+          [-19.045931,-65.259296],[-19.046203,-65.258908],[-19.046795,-65.2585],[-19.047846,-65.258348],
+          [-19.05004,-65.254226],[-19.050906,-65.253476],[-19.051396,-65.252746],[-19.052165,-65.2526],
+          [-19.05282,-65.253029],[-19.053504,-65.253326],[-19.054273,-65.253418],[-19.054755,-65.25371],
+          [-19.054941,-65.253],[-19.055491,-65.253305],[-19.054906,-65.253459],[-19.054158,-65.253426],
+          [-19.053276,-65.253246],[-19.052566,-65.252945],[-19.051808,-65.253883],[-19.051013,-65.254785],
+          [-19.050366,-65.255669],[-19.049643,-65.25648],[-19.049001,-65.257265],[-19.048471,-65.25784],
+          [-19.048071,-65.258328],[-19.047491,-65.258644],[-19.047085,-65.258098],[-19.046528,-65.26015],
+          [-19.04609,-65.260925],[-19.04556,-65.261325],[-19.045093,-65.261995],[-19.04447,-65.26248],
+          [-19.043635,-65.26266],[-19.043188,-65.262255],[-19.042808,-65.261955]
         ]
       },
       {
-        id: 'gaia-m5',
-        name: 'Micro 5 (Centro – Zona Sur)',
+        id: 'micro-5',
+        name: 'MICRO 5 — Centro Histórico – Zona Sur / Cementerio',
         shortBadge: 'MICRO 5',
-        category: 'gaia',
-        categoryLabel: 'Track Real Gaia GPS',
-        color: '#ea580c',
-        vehicleType: 'micro',
-        direction: 'Centro Histórico → Zona Sur',
-        stopName: 'Inicio: Centro (-19.0449, -65.2581) • Fin: Zona Sur',
-        frequency: 'Servicio regular • Track grabado en Gaia GPS',
-        description: 'Trazado directo del Micro 5 bajando desde el centro hacia las calles de la zona sur.',
+        color: '#d97706', // Ámbar oscuro
+        sourceLabel: 'Track Real Gaia GPS',
+        hasReturn: false,
+        direction: 'Centro • Calle Dalence / Bolívar • Sector Cementerio',
+        streets: 'Calle Bolívar, Calle Dalence, Plaza 25 de Mayo, Av. Siles / sector Cementerio General.',
+        description: 'Ruta urbana del Micro 5 conectando el centro administrativo con la zona sur y alrededores del Cementerio.',
         coords: [
           [-19.044935,-65.258159],[-19.045293,-65.258182],[-19.045632,-65.258466],[-19.046059,-65.258823],
-          [-19.046222,-65.25888],[-19.046768,-65.25816],[-19.047626,-65.257069],[-19.049455,-65.258564],
-          [-19.051309,-65.260214],[-19.052946,-65.258379],[-19.054395,-65.259632],[-19.055267,-65.258601],
-          [-19.056035,-65.257276]
+          [-19.046222,-65.25888],[-19.046768,-65.25816],[-19.047626,-65.257069],[-19.048569,-65.257817],
+          [-19.049455,-65.258564],[-19.050393,-65.259381],[-19.051309,-65.260214],[-19.05213,-65.259254],
+          [-19.052946,-65.258379],[-19.053943,-65.259243],[-19.054395,-65.259632],[-19.055267,-65.258601],
+          [-19.055677,-65.257857],[-19.056035,-65.257276]
         ]
       },
       {
-        id: 'gaia-m12',
-        name: 'Micro 12 (Centro – Campesino)',
+        id: 'micro-12',
+        name: 'MICRO 12 — Centro – Mercado Campesino / Norte',
         shortBadge: 'MICRO 12',
-        category: 'gaia',
-        categoryLabel: 'Track Real Gaia GPS',
-        color: '#0d9488',
-        vehicleType: 'micro',
-        direction: 'Centro → Mercado Campesino / Norte',
-        stopName: 'Inicio: Centro • Fin: Mercado Campesino',
-        frequency: 'Servicio regular • Track grabado en Gaia GPS',
-        description: 'Recorrido del Micro 12 conectando el centro histórico con el sector del Mercado Campesino.',
+        color: '#7c3aed', // Violeta
+        sourceLabel: 'Track Real Gaia GPS',
+        hasReturn: false,
+        direction: 'Centro Histórico • Mercado Campesino • Zona Norte',
+        streets: 'Calle España / Estudiantes, Plazuela Zudáñez, Av. Hernando Siles, Mercado Campesino y sector Norte.',
+        description: 'Conecta el centro de la ciudad directamente con el área comercial del Mercado Campesino y barrios del norte.',
         coords: [
-          [-19.043846,-65.25949],[-19.044161,-65.259052],[-19.043846,-65.258466],[-19.043526,-65.258292],
-          [-19.042911,-65.257993],[-19.042193,-65.257099],[-19.04144,-65.256491],[-19.040644,-65.255815],
-          [-19.033015,-65.256251],[-19.032003,-65.25617],[-19.032511,-65.25613],[-19.033261,-65.256305]
+          [-19.043846,-65.25949],[-19.044161,-65.259052],[-19.044261,-65.258823],[-19.04399,-65.258585],
+          [-19.04372,-65.258295],[-19.04347,-65.258178],[-19.043106,-65.258088],[-19.042833,-65.25789],
+          [-19.042988,-65.257707],[-19.042748,-65.25743],[-19.042346,-65.257217],[-19.041793,-65.256766],
+          [-19.04144,-65.256491],[-19.041143,-65.256356],[-19.040945,-65.255928],[-19.040588,-65.255796],
+          [-19.033015,-65.256251],[-19.031903,-65.256151],[-19.032301,-65.256096],[-19.032688,-65.256123],
+          [-19.033261,-65.256305]
         ]
       },
       {
-        id: 'gaia-m14',
-        name: 'Micro 14 (Centro – La Recoleta)',
+        id: 'micro-14',
+        name: 'MICRO 14 — Centro – La Recoleta / El Guereo',
         shortBadge: 'MICRO 14',
-        category: 'gaia',
-        categoryLabel: 'Track Real Gaia GPS',
-        color: '#db2777',
-        vehicleType: 'micro',
-        direction: 'Centro → Sector La Recoleta / Este',
-        stopName: 'Inicio: Centro • Fin: Zona La Recoleta',
-        frequency: 'Servicio regular • Track grabado en Gaia GPS',
-        description: 'Trazado del Micro 14 subiendo desde el centro hacia La Recoleta y barrios orientales.',
+        color: '#059669', // Verde esmeralda
+        sourceLabel: 'Track Real Gaia GPS',
+        hasReturn: false,
+        direction: 'Centro • Plazuela Aniceto Arce • La Recoleta',
+        streets: 'Calle Dalence, Calle Grau, Plazuela Pedro de Anzúrez (La Recoleta) y zona alta del Guereo.',
+        description: 'Subida tradicional hacia el mirador de La Recoleta y barrios aledaños al pie del cerro Churuquella.',
         coords: [
-          [-19.045536,-65.259271],[-19.046205,-65.25886],[-19.046851,-65.257915],[-19.047518,-65.257056],
-          [-19.048293,-65.255984],[-19.047705,-65.255337],[-19.047201,-65.255555],[-19.046638,-65.25609],
-          [-19.045861,-65.255219],[-19.044893,-65.254588],[-19.044313,-65.253918],[-19.045383,-65.253518],
-          [-19.045348,-65.251963],[-19.044855,-65.251255],[-19.044545,-65.250893]
-        ]
-      },
-
-      // --- TRANSPORTE LIBRE (PLAN PILOTO POR COLORES) ---
-      {
-        id: 'libre-azul',
-        name: 'Línea Azul (Barrio Japón – Centro)',
-        shortBadge: 'LÍNEA AZUL',
-        category: 'libre',
-        categoryLabel: 'Transporte Libre (Colores)',
-        color: '#1d4ed8',
-        vehicleType: 'taxi',
-        direction: 'Barrio Japón ↔ Plazuela Zudáñez',
-        stopName: 'Parada Central: Plazuela Zudáñez (Taxis y Minibuses)',
-        frequency: '05:30 a 22:00 • Cada 10-12 min o al llenar cupo',
-        description: 'Ruta habilitada del Plan Piloto conectando Barrio Japón con el centro. Operada por taxis (Bs 5) y algunos minibuses (Bs 3).',
-        coords: [
-          [-19.0125,-65.2860],[-19.0195,-65.2815],[-19.0265,-65.2760],[-19.0335,-65.2705],
-          [-19.0405,-65.2650],[-19.0466,-65.2602]
+          [-19.045536,-65.259271],[-19.045901,-65.259153],[-19.046205,-65.25886],[-19.046475,-65.258376],
+          [-19.046751,-65.25807],[-19.047061,-65.257683],[-19.047418,-65.257193],[-19.047733,-65.256788],
+          [-19.048038,-65.256389],[-19.048293,-65.255984],[-19.047951,-65.255556],[-19.047536,-65.255168],
+          [-19.047201,-65.255555],[-19.046773,-65.255908],[-19.046398,-65.255853],[-19.045951,-65.255297],
+          [-19.045486,-65.255016],[-19.044963,-65.25465],[-19.044665,-65.254311],[-19.044313,-65.253918],
+          [-19.044948,-65.253716],[-19.045383,-65.253518],[-19.045385,-65.252925],[-19.045331,-65.25205],
+          [-19.045365,-65.251641],[-19.044855,-65.251255],[-19.044545,-65.250893]
         ]
       },
       {
-        id: 'libre-lila',
-        name: 'Línea Lila (La Calancha – Centro)',
-        shortBadge: 'LÍNEA LILA',
-        category: 'libre',
-        categoryLabel: 'Transporte Libre (Colores)',
-        color: '#9333ea',
-        vehicleType: 'taxi',
-        direction: 'La Calancha ↔ Calles Camargo y España',
-        stopName: 'Parada Central: Intersección Camargo y España (Taxis)',
-        frequency: '05:30 a 22:00 • Cada 10-12 min o al llenar cupo',
-        description: 'Cubre el trayecto desde La Calancha hasta la esquina Camargo y España. Operada principalmente por taxis (Tarifa única Bs 5).',
-        coords: [
-          [-19.0645,-65.2495],[-19.0595,-65.2535],[-19.0545,-65.2565],[-19.0498,-65.2585],
-          [-19.0461,-65.2598]
-        ]
-      },
-      {
-        id: 'libre-naranja',
-        name: 'Línea Naranja (La Barranca – Centro)',
-        shortBadge: 'LÍNEA NARANJA',
-        category: 'libre',
-        categoryLabel: 'Transporte Libre (Colores)',
-        color: '#f97316',
-        vehicleType: 'minibus',
-        direction: 'La Barranca ↔ Mercado Campesino',
-        stopName: 'Parada Central: Sector Mercado Campesino (Minibuses)',
-        frequency: '05:30 a 22:00 • Cada 10-12 min o al llenar cupo',
-        description: 'Conecta el sector de La Barranca con el Mercado Campesino. Opera exclusivamente con minibuses (Mayor Bs 3, Univ Bs 2, Escolar Bs 1).',
-        coords: [
-          [-19.0165,-65.2510],[-19.0220,-65.2530],[-19.0275,-65.2548],[-19.0331,-65.2563]
-        ]
-      },
-      {
-        id: 'libre-amarilla',
-        name: 'Línea Amarilla (Villa Marlecita – Centro)',
-        shortBadge: 'LÍNEA AMARILLA',
-        category: 'libre',
-        categoryLabel: 'Transporte Libre (Colores)',
-        color: '#eab308',
-        vehicleType: 'minibus',
-        direction: 'Villa Marlecita ↔ Estadio Patria (3ra Fase)',
-        stopName: 'Parada Central: Estadio Patria - Tercera Fase (Trufis)',
-        frequency: '05:30 a 22:00 • Cada 10-12 min o al llenar cupo',
-        description: 'Ruta periurbana desde Villa Marlecita hasta la Tercera Fase del Estadio Patria utilizando trufis identificados con banderín amarillo.',
-        coords: [
-          [-19.0110,-65.2685],[-19.0185,-65.2655],[-19.0265,-65.2620],[-19.0345,-65.2582]
-        ]
-      },
-      {
-        id: 'libre-celeste',
-        name: "Línea Celeste (K'uchu Tambo – Centro)",
-        shortBadge: 'LÍNEA CELESTE',
-        category: 'libre',
-        categoryLabel: 'Transporte Libre (Colores)',
-        color: '#06b6d4',
-        vehicleType: 'minibus',
-        direction: "K'uchu Tambo ↔ Tarapacá y Hernando Siles",
-        stopName: 'Parada Central: Esquina Tarapacá y Hernando Siles',
-        frequency: '05:30 a 22:00 • Cada 10-12 min o al llenar cupo',
-        description: "Conecta K'uchu Tambo con la esquina de las calles Tarapacá y Hernando Siles con unidades identificadas con banderines celestes.",
-        coords: [
-          [-19.0695,-65.2845],[-19.0605,-65.2795],[-19.0515,-65.2740],[-19.0445,-65.2705],
-          [-19.0393,-65.2675]
-        ]
-      },
-
-      // --- LÍNEAS K Y Q (DE TUS CAPTURAS) ---
-      {
-        id: 'ref-k',
-        name: 'Línea K (Libertadores – Campesino)',
-        shortBadge: 'LINEA K',
-        category: 'qk',
-        categoryLabel: 'Micro Tradicional (Ida/Vuelta)',
-        color: '#dc2626',
+        id: 'linea-k',
+        name: 'LÍNEA K — Barrio Libertadores – Mercado Campesino',
+        shortBadge: 'LÍNEA K',
+        color: '#b91c1c', // Rojo carmesí
+        sourceLabel: 'Referencia Red Micros',
         hasReturn: true,
-        vehicleType: 'micro',
-        direction: 'IDA (Rojo) • VUELTA (Azul)',
-        stopName: 'Barrio Libertadores ↔ Mercado Campesino',
-        frequency: 'Micros • Adultos Bs 4 • Univ Bs 2 • Escolar Bs 1',
-        description: 'Comunica Barrio Libertadores con el Mercado Campesino atravesando el centro histórico y San Juanillo.',
+        direction: 'Barrio Libertadores • Centro Histórico • San Juanillo • Campesino',
+        streets: 'Barrio Libertadores, Av. 6 de Agosto, San Juanillo, Centro Histórico (Calle Arenales / Bolívar) y Mercado Campesino.',
+        description: 'Comunica Barrio Libertadores con el Mercado Campesino atravesando el centro histórico y San Juanillo (Ida en rojo, Vuelta en celeste).',
         coords: [
-          [-19.0215,-65.3035],[-19.0265,-65.2945],[-19.0315,-65.2845],[-19.0345,-65.2735],
-          [-19.0415,-65.2655],[-19.0475,-65.2595],[-19.0410,-65.2555],[-19.0335,-65.2562]
+          [-19.0225,-65.2995],[-19.0265,-65.2945],[-19.0295,-65.2885],[-19.0315,-65.2815],
+          [-19.0345,-65.2745],[-19.0395,-65.2685],[-19.0445,-65.2635],[-19.0485,-65.2595],
+          [-19.0435,-65.2555],[-19.0375,-65.2535]
         ],
         returnCoords: [
-          [-19.0335,-65.2562],[-19.0405,-65.2575],[-19.0468,-65.2612],[-19.0405,-65.2670],
-          [-19.0340,-65.2745],[-19.0310,-65.2855],[-19.0260,-65.2955],[-19.0215,-65.3035]
+          [-19.0375,-65.2535],[-19.0425,-65.2575],[-19.0475,-65.2615],[-19.0415,-65.2675],
+          [-19.0355,-65.2735],[-19.0305,-65.2825],[-19.0275,-65.2935],[-19.0225,-65.2995]
         ]
       },
       {
-        id: 'ref-q-amarilla',
-        name: 'Línea Q Amarilla (Alto Sucre – B. Bolivia)',
-        shortBadge: 'LINEA Q AMARILLA',
-        category: 'qk',
-        categoryLabel: 'Micro Tradicional (Ida/Vuelta)',
-        color: '#eab308',
+        id: 'linea-q-amarilla',
+        name: 'LÍNEA Q AMARILLA — Alto Sucre – Centro – El Abra',
+        shortBadge: 'Q AMARILLA',
+        color: '#eab308', // Amarillo
+        sourceLabel: 'Referencia Red Micros',
         hasReturn: true,
-        vehicleType: 'micro',
-        direction: 'IDA (Amarillo/Rojo) • VUELTA (Azul)',
-        stopName: 'Alto Sucre ↔ Centro ↔ Barrio Bolivia',
-        frequency: 'Micros • Adultos Bs 4 • Univ Bs 2 • Escolar Bs 1',
-        description: 'Conecta Alto Sucre con el centro urbano, San Juanillo, El Guereo, El Abra y Barrio Bolivia.',
+        direction: 'Alto Sucre • Centro Urbano • San Juanillo • El Guereo • Barrio Bolivia',
+        streets: 'Alto Sucre, El Abra, Barrio Bolivia, El Guereo, Centro Histórico y San Juanillo.',
+        description: 'Conecta Alto Sucre con el centro urbano, San Juanillo, El Guereo, El Abra y Barrio Bolivia (Ida en amarillo, Vuelta en celeste).',
         coords: [
-          [-19.0130,-65.2735],[-19.0225,-65.2705],[-19.0320,-65.2645],[-19.0415,-65.2615],
-          [-19.0478,-65.2598],[-19.0535,-65.2685],[-19.0595,-65.2815],[-19.0685,-65.2935]
+          [-19.0135,-65.2775],[-19.0215,-65.2735],[-19.0285,-65.2685],[-19.0365,-65.2645],
+          [-19.0445,-65.2615],[-19.0495,-65.2665],[-19.0545,-65.2745],[-19.0615,-65.2865]
         ],
         returnCoords: [
-          [-19.0685,-65.2935],[-19.0590,-65.2805],[-19.0525,-65.2675],[-19.0465,-65.2585],
-          [-19.0395,-65.2602],[-19.0310,-65.2635],[-19.0220,-65.2695],[-19.0130,-65.2735]
+          [-19.0615,-65.2865],[-19.0535,-65.2735],[-19.0475,-65.2635],[-19.0415,-65.2585],
+          [-19.0335,-65.2635],[-19.0245,-65.2715],[-19.0135,-65.2775]
         ]
       },
       {
-        id: 'ref-q-rosada',
-        name: 'Línea Q Rosada (Buenos Aires – V. Armonía)',
-        shortBadge: 'LINEA Q ROSADA',
-        category: 'qk',
-        categoryLabel: 'Micro Tradicional (Ida/Vuelta)',
-        color: '#ec4899',
+        id: 'linea-q-rosada',
+        name: 'LÍNEA Q ROSADA — Final Buenos Aires – Villa Armonía',
+        shortBadge: 'Q ROSADA',
+        color: '#ec4899', // Rosado
+        sourceLabel: 'Referencia Red Micros',
         hasReturn: true,
-        vehicleType: 'micro',
-        direction: 'IDA (Rosado) • VUELTA (Azul)',
-        stopName: 'Final Buenos Aires ↔ Villa Armonía',
-        frequency: 'Micros • Adultos Bs 4 • Univ Bs 2 • Escolar Bs 1',
+        direction: 'Final Buenos Aires • Centro Histórico • San Juanillo • Villa Armonía',
+        streets: 'Final Buenos Aires, Av. Marcelo Quiroga Santa Cruz, Centro Histórico, San Juanillo y Villa Armonía.',
         description: 'Conecta Final Buenos Aires con Villa Armonía pasando por el centro histórico, San Juanillo y sectores residenciales.',
         coords: [
-          [-19.0085,-65.2765],[-19.0205,-65.2715],[-19.0325,-65.2645],[-19.0435,-65.2598],
-          [-19.0495,-65.2655],[-19.0565,-65.2755],[-19.0655,-65.2845]
+          [-19.0115,-65.2795],[-19.0205,-65.2745],[-19.0295,-65.2695],[-19.0385,-65.2645],
+          [-19.0455,-65.2595],[-19.0515,-65.2655],[-19.0575,-65.2755],[-19.0625,-65.2815]
         ],
         returnCoords: [
-          [-19.0655,-65.2845],[-19.0555,-65.2740],[-19.0480,-65.2640],[-19.0415,-65.2585],
-          [-19.0315,-65.2635],[-19.0200,-65.2705],[-19.0085,-65.2765]
+          [-19.0625,-65.2815],[-19.0555,-65.2725],[-19.0475,-65.2625],[-19.0395,-65.2615],
+          [-19.0305,-65.2685],[-19.0205,-65.2745],[-19.0115,-65.2795]
         ]
       }
     ];
 
-    // Waypoints y paradas clave
-    const WAYPOINTS_DATA = [
+    // Waypoint registrado en tu KML de Gaia GPS
+    const GAIA_WAYPOINTS = [
       {
-        name: 'Punto Gaia: Micro 80 (Amarillo/Rosa) y 25 (Azul)',
+        name: 'Punto Micro 80 (Amarillo/Rosa) y Micro 25 (Azul)',
         coord: [-19.011912, -65.308723],
-        color: '#f59e0b',
-        detail: 'Avistamiento registrado en Gaia GPS (2.948 msnm).'
-      },
-      {
-        name: 'Parada Línea Azul — Plazuela Zudáñez',
-        coord: [-19.0466, -65.2602],
-        color: '#1d4ed8',
-        detail: 'Barrio Japón – Centro (Taxis Bs 5 y Minibuses Bs 3).'
-      },
-      {
-        name: 'Parada Línea Lila — Camargo y España',
-        coord: [-19.0461, -65.2598],
-        color: '#9333ea',
-        detail: 'La Calancha – Centro (Taxis tarifa única Bs 5).'
-      },
-      {
-        name: 'Parada Línea Naranja — Mercado Campesino',
-        coord: [-19.0331, -65.2563],
-        color: '#f97316',
-        detail: 'La Barranca – Centro (Exclusivo Minibuses Bs 3 / Univ Bs 2).'
-      },
-      {
-        name: 'Parada Línea Amarilla — Estadio Patria (3ra Fase)',
-        coord: [-19.0345, -65.2582],
-        color: '#eab308',
-        detail: 'Villa Marlecita – Centro (Trufis con banderín amarillo).'
-      },
-      {
-        name: 'Parada Línea Celeste — Tarapacá y Hernando Siles',
-        coord: [-19.0393, -65.2675],
-        color: '#06b6d4',
-        detail: "K'uchu Tambo – Centro (Transporte Libre)."
+        detail: 'Registrado en Gaia GPS • Elevación: 2.948 m (Sector Lajastambo / Noroeste)'
       }
     ];
 
     // =========================================================================
-    // 2. INICIALIZACIÓN DE MAPA SIN API KEY (ESRI WORLD STREET MAP + OFFLINE)
+    // 2. INICIALIZACIÓN DEL MAPA (ESRI WORLD STREET MAP - SIN API KEY NI BLOQUEOS)
     // =========================================================================
     let map;
-    let currentTileLayer = null;
-    let offlineGridLayer = null;
-    let activeRouteLayerGroup = null;
+    let baseLayer = null;
+    let offlineLayer = null;
+    let activeRouteLayer = null;
     let allRoutesLayerGroup = null;
-    let stopsLayerGroup = null;
-
+    let waypointsLayerGroup = null;
     let selectedRouteId = null;
-    let showAllMode = false;
-    let stopsVisible = true;
-    let currentBaseKey = 'esriStreet';
+    let showingAllRoutes = false;
 
-    // Puntos de referencia para el Modo Sin Internet
-    const SUCRE_OFFLINE_LANDMARKS = [
-      { name: '🏛️ Plaza 25 de Mayo', coord: [-19.0478, -65.2596] },
-      { name: '🛒 Mercado Campesino', coord: [-19.0335, -65.2562] },
-      { name: '🏟️ Estadio Patria', coord: [-19.0355, -65.2585] },
-      { name: '✈️ Ex-Aeropuerto', coord: [-19.0155, -65.2885] },
-      { name: '🌳 Parque Bolívar', coord: [-19.0422, -65.2636] },
-      { name: '⛪ La Recoleta', coord: [-19.0528, -65.2535] }
-    ];
+    // Estado del buscador A -> B
+    let finderActive = false;
+    let selectionStep = 'A'; // 'A' o 'B'
+    let pointALatLng = null;
+    let pointBLatLng = null;
+    let markerA = null;
+    let markerB = null;
+    let walkOverlayGroup = null;
+    let userGPSMarker = null;
 
     window.onload = function () {
       lucide.createIcons();
-      loadSavedCustomRoutes();
+      loadStoredKMLRoutes();
+      populateRouteDropdown();
       initMap();
     };
 
     function initMap() {
       map = L.map('map', {
         zoomControl: false
-      }).setView([-19.0415, -65.2615], 14);
+      }).setView([-19.0385, -65.2650], 14);
 
-      // Control de zoom abajo a la derecha (no estorba arriba)
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
+      L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-      // Capa Esri World Street Map: 100% gratis, sin API key y sin bloqueos en GitHub
-      applyBaseLayer('esriStreet');
+      setBaseMap('street');
 
-      activeRouteLayerGroup = L.featureGroup().addTo(map);
+      activeRouteLayer = L.featureGroup().addTo(map);
       allRoutesLayerGroup = L.featureGroup();
-      stopsLayerGroup = L.layerGroup().addTo(map);
+      waypointsLayerGroup = L.layerGroup().addTo(map);
+      walkOverlayGroup = L.featureGroup().addTo(map);
 
-      drawWaypointsAndStops();
+      renderGaiaWaypoints();
 
-      map.on('click', onMapClickTrufiFinder);
-    }
-
-    // =========================================================================
-    // 3. CAMBIO DE CAPA BASE (CALLES ESRI -> SATÉLITE ESRI -> MODO SIN INTERNET)
-    // =========================================================================
-    function cycleBaseLayer() {
-      const order = ['esriStreet', 'esriSat', 'offline'];
-      const nextIdx = (order.indexOf(currentBaseKey) + 1) % order.length;
-      applyBaseLayer(order[nextIdx]);
-    }
-
-    function applyBaseLayer(key) {
-      currentBaseKey = key;
-      const badge = document.getElementById('mapLayerBadge');
-
-      if (currentTileLayer) { map.removeLayer(currentTileLayer); currentTileLayer = null; }
-      if (offlineGridLayer) { map.removeLayer(offlineGridLayer); offlineGridLayer = null; }
-
-      if (key === 'esriStreet') {
-        badge.textContent = 'Calles';
-        currentTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-          maxZoom: 19,
-          attribution: 'Tiles © Esri'
-        }).addTo(map);
-      } else if (key === 'esriSat') {
-        badge.textContent = 'Satélite';
-        currentTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-          maxZoom: 19,
-          attribution: 'Tiles © Esri'
-        }).addTo(map);
-      } else if (key === 'offline') {
-        badge.textContent = 'Sin Red';
-        buildOfflineSchematicLayer();
-        showToast('Modo Sin Internet: usando referencias locales de Sucre');
-      }
-    }
-
-    function buildOfflineSchematicLayer() {
-      offlineGridLayer = L.layerGroup();
-      for (let lat = -19.070; lat <= -18.995; lat += 0.005) {
-        L.polyline([[lat, -65.320], [lat, -65.220]], { color: '#94a3b8', weight: 1, opacity: 0.4, dashArray: '4,4', interactive: false }).addTo(offlineGridLayer);
-      }
-      for (let lng = -65.320; lng <= -65.220; lng += 0.005) {
-        L.polyline([[-19.070, lng], [-18.995, lng]], { color: '#94a3b8', weight: 1, opacity: 0.4, dashArray: '4,4', interactive: false }).addTo(offlineGridLayer);
-      }
-      SUCRE_OFFLINE_LANDMARKS.forEach(lm => {
-        const icon = L.divIcon({
-          html: `<div class="px-2 py-0.5 rounded bg-slate-900/90 text-white text-[10px] font-bold whitespace-nowrap shadow">${lm.name}</div>`,
-          className: '',
-          iconSize: [120, 20],
-          iconAnchor: [60, 10]
-        });
-        L.marker(lm.coord, { icon, interactive: false }).addTo(offlineGridLayer);
+      map.on('click', (e) => {
+        document.getElementById('mapLayerMenu').classList.add('hidden');
+        if (finderActive) {
+          handleFinderMapClick(e.latlng);
+        }
       });
-      offlineGridLayer.addTo(map);
+    }
+
+    function toggleMapLayerMenu() {
+      document.getElementById('mapLayerMenu').classList.toggle('hidden');
+    }
+
+    function setBaseMap(type) {
+      document.getElementById('mapLayerMenu').classList.add('hidden');
+      const label = document.getElementById('mapStyleText');
+
+      if (baseLayer) { map.removeLayer(baseLayer); baseLayer = null; }
+      if (offlineLayer) { map.removeLayer(offlineLayer); offlineLayer = null; }
+
+      if (type === 'street') {
+        label.textContent = 'Calles';
+        // Esri World Street Map: gratuito, sin API key y no bloquea GitHub Pages
+        baseLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19,
+          attribution: '© Esri'
+        }).addTo(map);
+      } else if (type === 'satellite') {
+        label.textContent = 'Satélite';
+        baseLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19,
+          attribution: '© Esri'
+        }).addTo(map);
+      } else if (type === 'offline') {
+        label.textContent = 'Sin Red';
+        document.getElementById('map').style.backgroundColor = '#0f172a';
+        offlineLayer = L.layerGroup();
+        const landmarks = [
+          { name: '🏛️ Plaza 25 de Mayo', c: [-19.0478, -65.2596] },
+          { name: '🛒 Mercado Campesino', c: [-19.0372, -65.2548] },
+          { name: '🏟️ Estadio Patria', c: [-19.0398, -65.2602] },
+          { name: '✈️ Ex-Aeropuerto', c: [-19.0155, -65.2885] },
+          { name: '🌳 Parque Bolívar', c: [-19.0422, -65.2636] },
+          { name: '⛪ La Recoleta', c: [-19.0528, -65.2535] }
+        ];
+        landmarks.forEach(lm => {
+          L.marker(lm.c, {
+            interactive: false,
+            icon: L.divIcon({
+              html: `<div class="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-600 text-[10px] font-bold whitespace-nowrap">${lm.name}</div>`,
+              className: '',
+              iconSize: [120, 20],
+              iconAnchor: [60, 10]
+            })
+          }).addTo(offlineLayer);
+        });
+        offlineLayer.addTo(map);
+        showToast('Modo Sin Internet activo');
+      }
+    }
+
+    function renderGaiaWaypoints() {
+      waypointsLayerGroup.clearLayers();
+      GAIA_WAYPOINTS.forEach(wp => {
+        const icon = L.divIcon({
+          html: `<div class="w-7 h-7 rounded-full bg-amber-500 border-2 border-white shadow-lg flex items-center justify-center text-slate-950 font-black text-xs">80</div>`,
+          className: '',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        L.marker(wp.coord, { icon })
+          .bindPopup(`<div class="p-2 text-slate-900 text-xs"><b>${wp.name}</b><br/><span class="text-slate-600">${wp.detail}</span></div>`)
+          .addTo(waypointsLayerGroup);
+      });
     }
 
     // =========================================================================
-    // 4. DIBUJAR SOLO LA LÍNEA SELECCIONADA (SIN SATURAR EL MAPA)
+    // 3. SELECTOR DE LÍNEAS Y DIBUJO DE ALTA VISIBILIDAD EN EL MAPA
     // =========================================================================
-    function onSelectDropdownChange(routeId) {
+    function populateRouteDropdown() {
+      const select = document.getElementById('routeSelector');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="">-- Elige una línea de micro --</option>';
+
+      MICROS_DATA.forEach(route => {
+        const opt = document.createElement('option');
+        opt.value = route.id;
+        opt.textContent = route.name;
+        select.appendChild(opt);
+      });
+
+      if (currentVal) select.value = currentVal;
+    }
+
+    function onSelectRouteDropdown(routeId) {
       if (!routeId) {
-        clearSelectedRoute();
+        closeBottomCard();
         return;
       }
-      selectSingleRoute(routeId);
+      selectMicroRoute(routeId, null);
     }
 
-    function buildRoutePolylines(route, targetGroup, showPins = true) {
-      // Borde blanco para resaltar sobre calles o satélite
+    function selectMicroRoute(routeId, walkInfo) {
+      const route = MICROS_DATA.find(r => r.id === routeId);
+      if (!route) return;
+
+      selectedRouteId = routeId;
+      showingAllRoutes = false;
+      document.getElementById('btnVerTodas').classList.remove('bg-amber-400', 'text-slate-950');
+      document.getElementById('routeSelector').value = routeId;
+      document.getElementById('selectedColorStrip').style.backgroundColor = route.color;
+
+      // Limpiar capas anteriores
+      map.removeLayer(allRoutesLayerGroup);
+      activeRouteLayer.clearLayers();
+      walkOverlayGroup.clearLayers();
+
+      // 1. Halo exterior oscuro sutil para separar del fondo claro del mapa
       L.polyline(route.coords, {
-        color: '#ffffff',
-        weight: 7,
-        opacity: 0.85,
+        color: '#0f172a',
+        weight: 11,
+        opacity: 0.45,
         lineCap: 'round',
         lineJoin: 'round'
-      }).addTo(targetGroup);
+      }).addTo(activeRouteLayer);
 
-      // Línea principal
-      const mainLine = L.polyline(route.coords, {
-        color: route.color,
-        weight: 4.5,
+      // 2. Halo blanco grueso para resaltar sobre las calles
+      L.polyline(route.coords, {
+        color: '#ffffff',
+        weight: 8.5,
         opacity: 0.95,
         lineCap: 'round',
-        lineJoin: 'round',
-        dashArray: route.category === 'libre' ? '10, 6' : null
-      }).addTo(targetGroup);
+        lineJoin: 'round'
+      }).addTo(activeRouteLayer);
 
-      mainLine.on('click', (e) => {
-        L.DomEvent.stopPropagation(e);
-        selectSingleRoute(route.id);
-      });
+      // 3. Línea principal vibrante del micro
+      L.polyline(route.coords, {
+        color: route.color,
+        weight: 5,
+        opacity: 1,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(activeRouteLayer);
 
-      // Vuelta en azul si existe (Líneas K y Q)
+      // Si tiene ruta de vuelta (Líneas K y Q), dibujarla en azul/celeste con halo
       if (route.hasReturn && route.returnCoords) {
+        L.polyline(route.returnCoords, {
+          color: '#ffffff',
+          weight: 7,
+          opacity: 0.9
+        }).addTo(activeRouteLayer);
+
         L.polyline(route.returnCoords, {
           color: '#0284c7',
           weight: 4,
-          opacity: 0.9,
-          dashArray: '6, 6'
-        }).addTo(targetGroup);
+          opacity: 0.95,
+          dashArray: '8, 6'
+        }).addTo(activeRouteLayer);
       }
 
-      if (showPins && route.coords.length > 1) {
-        const startPt = route.coords[0];
-        const endPt = route.coords[route.coords.length - 1];
+      // Marcadores claros de Inicio y Fin del recorrido del micro
+      const startPt = route.coords[0];
+      const endPt = route.coords[route.coords.length - 1];
 
-        L.circleMarker(startPt, {
+      L.marker(startPt, {
+        icon: L.divIcon({
+          html: `<div class="px-2 py-0.5 rounded-full bg-emerald-600 text-white border-2 border-white route-pin-label">INICIO ${route.shortBadge}</div>`,
+          className: '',
+          iconSize: [90, 22],
+          iconAnchor: [45, 11]
+        })
+      }).addTo(activeRouteLayer);
+
+      L.marker(endPt, {
+        icon: L.divIcon({
+          html: `<div class="px-2 py-0.5 rounded-full text-white border-2 border-white route-pin-label" style="background:${route.color}">FIN ${route.shortBadge}</div>`,
+          className: '',
+          iconSize: [85, 22],
+          iconAnchor: [42, 11]
+        })
+      }).addTo(activeRouteLayer);
+
+      // Si viene desde el buscador A -> B, dibujar líneas punteadas peatonales de subida y bajada
+      if (walkInfo) {
+        // Línea punteada desde Punto A hasta punto de subida en la ruta
+        L.polyline([walkInfo.pointA, walkInfo.boardPt], {
+          color: '#10b981',
+          weight: 4,
+          dashArray: '6, 8'
+        }).addTo(walkOverlayGroup);
+
+        L.circleMarker(walkInfo.boardPt, {
           radius: 7,
-          fillColor: '#16a34a',
+          fillColor: '#10b981',
           color: '#ffffff',
           weight: 2.5,
           fillOpacity: 1
-        }).bindTooltip('Inicio').addTo(targetGroup);
+        }).bindTooltip(`Subir aquí (~${walkInfo.distBoard} m)`).addTo(walkOverlayGroup);
 
-        L.circleMarker(endPt, {
+        // Línea punteada desde punto de bajada hasta Punto B
+        L.polyline([walkInfo.alightPt, walkInfo.pointB], {
+          color: '#ef4444',
+          weight: 4,
+          dashArray: '6, 8'
+        }).addTo(walkOverlayGroup);
+
+        L.circleMarker(walkInfo.alightPt, {
           radius: 7,
-          fillColor: '#dc2626',
+          fillColor: '#ef4444',
           color: '#ffffff',
           weight: 2.5,
           fillOpacity: 1
-        }).bindTooltip('Fin / Parada').addTo(targetGroup);
+        }).bindTooltip(`Bajar aquí (~${walkInfo.distAlight} m)`).addTo(walkOverlayGroup);
       }
+
+      // Ajustar vista del mapa
+      const boundsGroup = L.featureGroup([activeRouteLayer]);
+      if (walkInfo) {
+        boundsGroup.addLayer(walkOverlayGroup);
+      }
+      map.fitBounds(boundsGroup.getBounds(), { padding: [55, 85] });
+
+      // Actualizar tarjeta inferior
+      updateBottomCard(route, walkInfo);
     }
 
-    function selectSingleRoute(routeId) {
-      const route = ROUTES_DATA.find(r => r.id === routeId);
-      if (!route) return;
-
-      // Apagar modo "Ver todas" si estaba encendido
-      if (showAllMode) {
-        showAllMode = false;
-        map.removeLayer(allRoutesLayerGroup);
-        document.getElementById('toggleAllLabel').textContent = 'Ver todas';
-      }
-
-      selectedRouteId = routeId;
-      document.getElementById('routeSelect').value = routeId;
-
-      // Limpiar ruta anterior y dibujar EXCLUSIVAMENTE la elegida
-      activeRouteLayerGroup.clearLayers();
-      buildRoutePolylines(route, activeRouteLayerGroup, true);
-
-      if (activeRouteLayerGroup.getLayers().length > 0) {
-        map.fitBounds(activeRouteLayerGroup.getBounds(), { padding: [55, 55] });
-      }
-
-      // Actualizar tarjeta flotante inferior
-      const card = document.getElementById('floatingRouteCard');
+    function updateBottomCard(route, walkInfo) {
+      const card = document.getElementById('routeBottomCard');
       card.classList.remove('hidden');
 
-      const badge = document.getElementById('cardBadge');
+      const badge = document.getElementById('cardLineBadge');
       badge.textContent = route.shortBadge;
       badge.style.backgroundColor = route.color;
 
-      document.getElementById('cardTypeBadge').textContent = route.categoryLabel;
-      document.getElementById('cardColorDot').style.backgroundColor = route.color;
-      document.getElementById('cardDirectionLabel').textContent = route.hasReturn ? 'IDA' : route.direction;
+      document.getElementById('cardSourceTag').textContent = route.sourceLabel;
+      document.getElementById('cardMainDot').style.backgroundColor = route.color;
+      document.getElementById('cardMainDirLabel').textContent = route.hasReturn ? 'IDA' : route.direction;
 
-      const returnInd = document.getElementById('cardReturnIndicator');
+      const retBadge = document.getElementById('cardReturnBadge');
       if (route.hasReturn) {
-        returnInd.classList.remove('hidden');
-        returnInd.classList.add('flex');
+        retBadge.classList.remove('hidden');
+        retBadge.classList.add('flex');
       } else {
-        returnInd.classList.add('hidden');
-        returnInd.classList.remove('flex');
+        retBadge.classList.add('hidden');
+        retBadge.classList.remove('flex');
       }
 
-      document.getElementById('cardDescription').textContent = route.description;
-      document.getElementById('cardStopText').textContent = route.stopName;
+      document.getElementById('cardRouteDesc').textContent = route.description;
+      document.getElementById('cardStreetsList').textContent = route.streets;
 
-      let fareText = 'Micro: Adulto Bs 4 • Univ Bs 2 • Esc Bs 1';
-      if (route.vehicleType === 'minibus') {
-        fareText = 'Minibús: Mayor Bs 3 • Univ Bs 2 • Esc Bs 1';
-      } else if (route.vehicleType === 'taxi') {
-        fareText = 'Taxi Libre: Tarifa única Bs 5';
+      const walkBox = document.getElementById('cardWalkSummary');
+      if (walkInfo) {
+        walkBox.classList.remove('hidden');
+        walkBox.innerHTML = `🚶 <b>Caminata estimada:</b> Camina <b>${walkInfo.distBoard} m</b> desde tu origen hasta la calle donde pasa el micro, y al bajar camina <b>${walkInfo.distAlight} m</b> hasta tu destino.`;
+      } else {
+        walkBox.classList.add('hidden');
       }
-      document.getElementById('cardFareSummary').textContent = fareText;
     }
 
-    function clearSelectedRoute() {
+    function closeBottomCard() {
       selectedRouteId = null;
-      document.getElementById('routeSelect').value = '';
-      activeRouteLayerGroup.clearLayers();
-      document.getElementById('floatingRouteCard').classList.add('hidden');
+      document.getElementById('routeBottomCard').classList.add('hidden');
+      document.getElementById('routeSelector').value = '';
+      activeRouteLayer.clearLayers();
+      walkOverlayGroup.clearLayers();
     }
 
-    function toggleShowAllRoutes() {
-      showAllMode = !showAllMode;
-      const label = document.getElementById('toggleAllLabel');
-
-      if (showAllMode) {
-        clearSelectedRoute();
-        allRoutesLayerGroup.clearLayers();
-        ROUTES_DATA.forEach(r => buildRoutePolylines(r, allRoutesLayerGroup, false));
-        allRoutesLayerGroup.addTo(map);
-        map.fitBounds(allRoutesLayerGroup.getBounds(), { padding: [40, 40] });
-        label.textContent = 'Ocultar todas';
-        showToast('Mostrando las ' + ROUTES_DATA.length + ' líneas (toca una para aislarla)');
-      } else {
+    function toggleAllRoutesView() {
+      const btn = document.getElementById('btnVerTodas');
+      if (showingAllRoutes) {
+        showingAllRoutes = false;
         map.removeLayer(allRoutesLayerGroup);
-        label.textContent = 'Ver todas';
+        btn.classList.remove('bg-amber-400', 'text-slate-950');
+        showToast('Vista limpia activada');
+        return;
+      }
+
+      closeBottomCard();
+      showingAllRoutes = true;
+      btn.classList.add('bg-amber-400', 'text-slate-950');
+      allRoutesLayerGroup.clearLayers();
+
+      MICROS_DATA.forEach(route => {
+        L.polyline(route.coords, {
+          color: '#ffffff',
+          weight: 6,
+          opacity: 0.75
+        }).addTo(allRoutesLayerGroup);
+
+        const line = L.polyline(route.coords, {
+          color: route.color,
+          weight: 3.5,
+          opacity: 0.9
+        });
+        line.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          selectMicroRoute(route.id, null);
+        });
+        line.addTo(allRoutesLayerGroup);
+      });
+
+      allRoutesLayerGroup.addTo(map);
+      map.fitBounds(allRoutesLayerGroup.getBounds(), { padding: [35, 35] });
+    }
+
+    // =========================================================================
+    // 4. BUSCADOR INTELIGENTE PUNTO A -> PUNTO B Y DESDE MI UBICACIÓN GPS
+    // =========================================================================
+    function toggleRouteFinder() {
+      finderActive = !finderActive;
+      const panel = document.getElementById('finderPanel');
+      const btn = document.getElementById('toggleFinderBtn');
+
+      if (finderActive) {
+        panel.classList.remove('hidden');
+        btn.classList.replace('bg-indigo-600', 'bg-amber-400');
+        btn.classList.replace('text-white', 'text-slate-950');
+        resetABPoints();
+      } else {
+        panel.classList.add('hidden');
+        btn.classList.replace('bg-amber-400', 'bg-indigo-600');
+        btn.classList.replace('text-slate-950', 'text-white');
+        resetABPoints();
       }
     }
 
-    // =========================================================================
-    // 5. PARADAS CLAVE DEL PLAN PILOTO Y WAYPOINTS
-    // =========================================================================
-    function drawWaypointsAndStops() {
-      stopsLayerGroup.clearLayers();
+    function startManualABMode() {
+      resetABPoints();
+      selectionStep = 'A';
+      document.getElementById('finderStepText').innerHTML = '1️⃣ Toca en el mapa el <b>Punto A (¿Dónde estás?)</b>.';
+      showToast('Toca tu Punto A en el mapa');
+    }
 
-      WAYPOINTS_DATA.forEach(wp => {
-        const iconHtml = `
-          <div class="w-6 h-6 rounded-full flex items-center justify-center text-white shadow-md border-2 border-white stop-pulse" style="background:${wp.color}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+    function startGPSOriginMode() {
+      if (!navigator.geolocation) {
+        showToast('Tu navegador no permite usar GPS');
+        return;
+      }
+      document.getElementById('finderStepText').innerHTML = '📡 Obteniendo tu ubicación GPS...';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+          map.setView(gpsLatLng, 15);
+          setPointA(gpsLatLng, true);
+          selectionStep = 'B';
+          document.getElementById('finderStepText').innerHTML = '2️⃣ Ubicación lista. Ahora toca en el mapa tu <b>Punto B (¿A dónde vas?)</b>.';
+          showToast('Toca tu destino (Punto B) en el mapa');
+        },
+        () => {
+          document.getElementById('finderStepText').innerHTML = '⚠️ No se pudo leer el GPS. Toca manualmente tu <b>Punto A</b> en el mapa.';
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    }
+
+    function handleFinderMapClick(latlng) {
+      if (selectionStep === 'A') {
+        setPointA(latlng, false);
+        selectionStep = 'B';
+        document.getElementById('finderStepText').innerHTML = '2️⃣ Ahora toca en el mapa tu <b>Punto B (Destino)</b>.';
+      } else {
+        setPointB(latlng);
+        selectionStep = 'A';
+        evaluateNearestMicros();
+      }
+    }
+
+    function setPointA(latlng, isGPS) {
+      pointALatLng = latlng;
+      if (markerA) map.removeLayer(markerA);
+      markerA = L.marker(latlng, {
+        icon: L.divIcon({
+          html: `<div class="px-2.5 py-1 rounded-full bg-emerald-600 text-white border-2 border-white route-pin-label">${isGPS ? '📍 MI GPS (A)' : 'PUNTO A'}</div>`,
+          className: '',
+          iconSize: [92, 24],
+          iconAnchor: [46, 12]
+        })
+      }).addTo(map);
+      document.getElementById('pointAStatus').innerHTML = `<span class="text-emerald-400 font-bold">A: Listo</span>`;
+    }
+
+    function setPointB(latlng) {
+      pointBLatLng = latlng;
+      if (markerB) map.removeLayer(markerB);
+      markerB = L.marker(latlng, {
+        icon: L.divIcon({
+          html: `<div class="px-2.5 py-1 rounded-full bg-red-600 text-white border-2 border-white route-pin-label">🏁 DESTINO (B)</div>`,
+          className: '',
+          iconSize: [96, 24],
+          iconAnchor: [48, 12]
+        })
+      }).addTo(map);
+      document.getElementById('pointBStatus').innerHTML = `<span class="text-red-400 font-bold">B: Listo</span>`;
+    }
+
+    function resetABPoints() {
+      pointALatLng = null;
+      pointBLatLng = null;
+      selectionStep = 'A';
+      if (markerA) { map.removeLayer(markerA); markerA = null; }
+      if (markerB) { map.removeLayer(markerB); markerB = null; }
+      if (walkOverlayGroup) walkOverlayGroup.clearLayers();
+      document.getElementById('pointAStatus').textContent = 'A: Sin marcar';
+      document.getElementById('pointBStatus').textContent = 'B: Sin marcar';
+      document.getElementById('finderResultsContainer').classList.add('hidden');
+      document.getElementById('finderResultsContainer').innerHTML = '';
+      document.getElementById('finderStepText').innerHTML = '1️⃣ Toca en el mapa tu <b>Punto A (Origen)</b> o presiona <b>Desde Mi GPS → B</b>.';
+    }
+
+    // Encuentra el punto exacto más cercano dentro de la polilínea de un micro
+    function findClosestVertex(targetLatLng, coordsArray) {
+      let minDist = Infinity;
+      let closestPt = coordsArray[0];
+      for (let i = 0; i < coordsArray.length; i++) {
+        const pt = L.latLng(coordsArray[i][0], coordsArray[i][1]);
+        const d = targetLatLng.distanceTo(pt);
+        if (d < minDist) {
+          minDist = d;
+          closestPt = coordsArray[i];
+        }
+      }
+      return { distance: Math.round(minDist), coord: closestPt };
+    }
+
+    function evaluateNearestMicros() {
+      if (!pointALatLng || !pointBLatLng) return;
+
+      const ranked = MICROS_DATA.map(route => {
+        const fullCoords = route.returnCoords ? route.coords.concat(route.returnCoords) : route.coords;
+        const board = findClosestVertex(pointALatLng, fullCoords);
+        const alight = findClosestVertex(pointBLatLng, fullCoords);
+        const totalWalk = board.distance + alight.distance;
+
+        return {
+          route,
+          boardPt: board.coord,
+          alightPt: alight.coord,
+          distBoard: board.distance,
+          distAlight: alight.distance,
+          totalWalk
+        };
+      }).sort((a, b) => a.totalWalk - b.totalWalk);
+
+      const bestOptions = ranked.slice(0, 4);
+      const container = document.getElementById('finderResultsContainer');
+      container.classList.remove('hidden');
+
+      document.getElementById('finderStepText').innerHTML = '✅ <b>Micros sugeridos (toca uno para ver en el mapa):</b>';
+
+      container.innerHTML = bestOptions.map((opt, idx) => {
+        const proximityLabel = opt.totalWalk <= 350 
+          ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">Directo / Muy cerca</span>'
+          : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">Aproximado</span>';
+
+        return `
+          <div onclick="selectOptionFromFinder('${opt.route.id}', ${opt.boardPt[0]}, ${opt.boardPt[1]}, ${opt.alightPt[0]}, ${opt.alightPt[1]}, ${opt.distBoard}, ${opt.distAlight})" 
+               class="p-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 border ${idx === 0 ? 'border-emerald-400' : 'border-slate-700'} cursor-pointer transition">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="px-2 py-0.5 rounded-lg font-black text-[10px] text-white shrink-0" style="background:${opt.route.color}">
+                  ${opt.route.shortBadge}
+                </span>
+                <span class="font-bold text-xs text-white truncate">${opt.route.name.split('—')[0]}</span>
+              </div>
+              ${proximityLabel}
+            </div>
+            <div class="mt-1 text-[11px] text-slate-300 flex items-center justify-between">
+              <span>Subir a <b>${opt.distBoard} m</b> • Bajar a <b>${opt.distAlight} m</b></span>
+              <span class="text-indigo-300 font-bold">Ver →</span>
+            </div>
           </div>
         `;
+      }).join('');
 
-        const customIcon = L.divIcon({
-          html: iconHtml,
-          className: '',
-          iconSize: [24, 24],
-          iconAnchor: [12, 12]
+      // Seleccionar automáticamente la mejor opción #1
+      const top = bestOptions[0];
+      if (top) {
+        selectMicroRoute(top.route.id, {
+          pointA: [pointALatLng.lat, pointALatLng.lng],
+          pointB: [pointBLatLng.lat, pointBLatLng.lng],
+          boardPt: top.boardPt,
+          alightPt: top.alightPt,
+          distBoard: top.distBoard,
+          distAlight: top.distAlight
         });
+      }
+    }
 
-        const marker = L.marker(wp.coord, { icon: customIcon });
-        marker.bindPopup(`
-          <div class="p-3 bg-slate-900 text-white">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-0.5">Parada / Punto Clave</div>
-            <div class="font-bold text-xs">${wp.name}</div>
-            <div class="text-[11px] text-slate-300 mt-1">${wp.detail}</div>
-          </div>
-        `);
-
-        stopsLayerGroup.addLayer(marker);
+    function selectOptionFromFinder(routeId, bLat, bLng, aLat, aLng, distBoard, distAlight) {
+      selectMicroRoute(routeId, {
+        pointA: [pointALatLng.lat, pointALatLng.lng],
+        pointB: [pointBLatLng.lat, pointBLatLng.lng],
+        boardPt: [bLat, bLng],
+        alightPt: [aLat, aLng],
+        distBoard,
+        distAlight
       });
     }
 
-    function toggleStopsLayer() {
-      const btn = document.getElementById('stopsToggleBtn');
-      if (stopsVisible) {
-        map.removeLayer(stopsLayerGroup);
-        stopsVisible = false;
-        btn.classList.replace('bg-emerald-600/95', 'bg-slate-800/90');
-      } else {
-        stopsLayerGroup.addTo(map);
-        stopsVisible = true;
-        btn.classList.replace('bg-slate-800/90', 'bg-emerald-600/95');
-      }
-    }
-
     // =========================================================================
-    // 6. BUSCADOR INTELIGENTE "¿QUÉ TOMO?" (ORIGEN -> DESTINO)
+    // 5. GPS EN TIEMPO REAL, IMPORTADOR KML, CALCULADORA Y COMPARTIR
     // =========================================================================
-    let trufiMode = false;
-    let originMarker = null;
-    let destMarker = null;
-
-    function toggleTrufiFinder() {
-      trufiMode = !trufiMode;
-      const banner = document.getElementById('trufiFinderBanner');
-      const btn = document.getElementById('trufiModeBtn');
-
-      if (trufiMode) {
-        banner.classList.remove('hidden');
-        btn.classList.replace('bg-indigo-600/95', 'bg-amber-500');
-        btn.classList.replace('text-white', 'text-slate-950');
-        clearSelectedRoute();
-      } else {
-        banner.classList.add('hidden');
-        btn.classList.replace('bg-amber-500', 'bg-indigo-600/95');
-        btn.classList.replace('text-slate-950', 'text-white');
-        resetTrufiPoints();
-      }
-    }
-
-    function resetTrufiPoints() {
-      if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
-      if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
-      document.getElementById('trufiInstruction').innerHTML = '1️⃣ Toca en el mapa dónde estás (<b>ORIGEN</b>) o usa tu GPS.';
-      document.getElementById('trufiResultsBox').innerHTML = '';
-    }
-
-    function onMapClickTrufiFinder(e) {
-      if (!trufiMode) return;
-
-      if (!originMarker) {
-        originMarker = L.marker(e.latlng, {
-          icon: L.divIcon({
-            html: `<div class="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-[10px] shadow-lg border-2 border-white">ORIGEN</div>`,
-            className: '',
-            iconSize: [56, 22],
-            iconAnchor: [28, 11]
-          })
-        }).addTo(map);
-        document.getElementById('trufiInstruction').innerHTML = '2️⃣ Ahora toca en el mapa tu <b>DESTINO</b>.';
-      } else if (!destMarker) {
-        destMarker = L.marker(e.latlng, {
-          icon: L.divIcon({
-            html: `<div class="px-2 py-0.5 rounded-full bg-red-600 text-white font-bold text-[10px] shadow-lg border-2 border-white">DESTINO</div>`,
-            className: '',
-            iconSize: [62, 22],
-            iconAnchor: [31, 11]
-          })
-        }).addTo(map);
-        calculateBestRoutes(originMarker.getLatLng(), destMarker.getLatLng());
-      } else {
-        resetTrufiPoints();
-        onMapClickTrufiFinder(e);
-      }
-    }
-
-    function useMyGPSForOrigin() {
+    function centerOnUserGPS() {
       if (!navigator.geolocation) {
-        showToast('Tu navegador no soporta GPS');
+        showToast('Geolocalización no disponible en este navegador');
         return;
       }
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
-          map.setView(latlng, 15);
-          if (originMarker) map.removeLayer(originMarker);
-          originMarker = L.marker(latlng, {
+          const latlng = [pos.coords.latitude, pos.coords.longitude];
+          map.setView(latlng, 16);
+          if (userGPSMarker) map.removeLayer(userGPSMarker);
+          userGPSMarker = L.marker(latlng, {
             icon: L.divIcon({
-              html: `<div class="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-[10px] shadow-lg border-2 border-white">MI GPS</div>`,
+              html: `<div class="w-4 h-4 rounded-full bg-sky-500 border-2 border-white shadow-lg gps-dot relative"></div>`,
               className: '',
-              iconSize: [54, 22],
-              iconAnchor: [27, 11]
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
             })
-          }).addTo(map);
-          document.getElementById('trufiInstruction').innerHTML = '2️⃣ Ahora toca en el mapa tu <b>DESTINO</b>.';
+          }).addTo(map).bindPopup('Tu ubicación actual').openPopup();
         },
-        () => showToast('Activa la ubicación en tu teléfono')
+        () => showToast('Activa el GPS de tu teléfono para ubicarte')
       );
     }
 
-    function minDistanceToRouteMeters(pointLatLng, coordsArray) {
-      let minD = Infinity;
-      coordsArray.forEach(c => {
-        const d = pointLatLng.distanceTo(L.latLng(c[0], c[1]));
-        if (d < minD) minD = d;
-      });
-      return Math.round(minD);
-    }
-
-    function calculateBestRoutes(originLatLng, destLatLng) {
-      const results = ROUTES_DATA.map(route => {
-        const allPts = route.returnCoords ? route.coords.concat(route.returnCoords) : route.coords;
-        const dOrigin = minDistanceToRouteMeters(originLatLng, allPts);
-        const dDest = minDistanceToRouteMeters(destLatLng, allPts);
-        return { route, dOrigin, dDest, totalScore: dOrigin + dDest };
-      }).sort((a, b) => a.totalScore - b.totalScore);
-
-      const top3 = results.slice(0, 3);
-      const box = document.getElementById('trufiResultsBox');
-      document.getElementById('trufiInstruction').innerHTML = '✅ <b>Toca una opción para ver su recorrido:</b>';
-
-      box.innerHTML = top3.map(item => `
-        <div onclick="selectSingleRoute('${item.route.id}')" class="p-2 rounded-xl bg-slate-900/95 hover:bg-slate-800 border border-indigo-400/30 flex items-center justify-between cursor-pointer">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="px-2 py-0.5 rounded text-[10px] font-bold text-white shrink-0" style="background:${item.route.color}">${item.route.shortBadge}</span>
-            <span class="text-[11px] font-semibold text-white truncate">${item.route.name}</span>
-          </div>
-          <span class="text-[10px] text-emerald-300 font-semibold shrink-0 ml-1">~${item.dOrigin}m / ~${item.dDest}m</span>
-        </div>
-      `).join('');
-    }
-
-    // =========================================================================
-    // 7. IMPORTAR KML NUEVOS DESDE GAIA GPS
-    // =========================================================================
-    function handleKMLUpload(event) {
+    function importGaiaKML(event) {
       const file = event.target.files[0];
       if (!file) return;
-
-      const chosenColor = document.getElementById('customKmlColor').value || '#10b981';
+      const color = document.getElementById('newKmlColor').value || '#e11d48';
       const reader = new FileReader();
 
       reader.onload = function (e) {
@@ -1150,182 +1134,112 @@
           const parser = new DOMParser();
           const xml = parser.parseFromString(e.target.result, 'text/xml');
           const placemarks = xml.getElementsByTagName('Placemark');
-          let addedCount = 0;
+          let count = 0;
 
           for (let i = 0; i < placemarks.length; i++) {
             const pm = placemarks[i];
-            const nameNode = pm.getElementsByTagName('name')[0];
             const lineString = pm.getElementsByTagName('LineString')[0];
+            if (!lineString) continue;
 
-            if (lineString) {
-              const coordsText = lineString.getElementsByTagName('coordinates')[0]?.textContent.trim();
-              if (coordsText) {
-                const pairs = coordsText.split(/\s+/).map(triplet => {
-                  const parts = triplet.split(',');
-                  return [parseFloat(parts[1]), parseFloat(parts[0])];
-                }).filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+            const coordsText = lineString.getElementsByTagName('coordinates')[0]?.textContent.trim();
+            if (!coordsText) continue;
 
-                if (pairs.length > 1) {
-                  const rawName = nameNode ? nameNode.textContent.trim() : `Ruta KML ${ROUTES_DATA.length + 1}`;
-                  const newRoute = {
-                    id: 'custom-kml-' + Date.now() + '-' + i,
-                    name: rawName,
-                    shortBadge: rawName.slice(0, 12).toUpperCase(),
-                    category: 'gaia',
-                    categoryLabel: 'KML Importado',
-                    color: chosenColor,
-                    vehicleType: 'micro',
-                    direction: 'Track importado desde Gaia GPS',
-                    stopName: 'Inicio: ' + pairs[0][0].toFixed(4) + ', ' + pairs[0][1].toFixed(4),
-                    frequency: 'Guardado en este dispositivo',
-                    description: 'Recorrido cargado desde archivo KML.',
-                    coords: pairs
-                  };
-                  ROUTES_DATA.unshift(newRoute);
-                  saveCustomRouteToStorage(newRoute);
-                  addRouteToDropdown(newRoute);
-                  addedCount++;
-                }
-              }
+            const coords = coordsText.split(/\s+/).map(item => {
+              const p = item.split(',');
+              return [parseFloat(p[1]), parseFloat(p[0])];
+            }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+
+            if (coords.length > 1) {
+              const rawName = pm.getElementsByTagName('name')[0]?.textContent.trim() || `Micro KML ${MICROS_DATA.length + 1}`;
+              const desc = pm.getElementsByTagName('description')[0]?.textContent.replace(/<[^>]*>?/gm, '').trim() || 'Recorrido cargado desde Gaia GPS';
+              const newRoute = {
+                id: 'kml-' + Date.now() + '-' + i,
+                name: rawName.toUpperCase(),
+                shortBadge: rawName.slice(0, 10).toUpperCase(),
+                color: color,
+                sourceLabel: 'KML Gaia GPS',
+                hasReturn: false,
+                direction: desc.slice(0, 65),
+                streets: 'Trazado importado directamente desde tu archivo KML.',
+                description: desc,
+                coords: coords
+              };
+              MICROS_DATA.unshift(newRoute);
+              saveKMLRoute(newRoute);
+              count++;
             }
           }
 
-          closeModal('menuModal');
-          if (addedCount > 0) {
-            selectSingleRoute(ROUTES_DATA[0].id);
-            showToast(`¡Se agregó ${addedCount} ruta(s) de tu KML!`);
+          closeModal('settingsModal');
+          if (count > 0) {
+            populateRouteDropdown();
+            selectMicroRoute(MICROS_DATA[0].id, null);
+            showToast(`Se agregaron ${count} línea(s) de micro desde tu KML`);
           } else {
-            showToast('No se encontraron trazados en ese KML');
+            showToast('No se encontraron rutas válidas en el KML');
           }
         } catch (err) {
-          showToast('Error al leer el archivo KML');
+          showToast('Error al procesar el archivo KML');
         }
       };
-
       reader.readAsText(file);
     }
 
-    function addRouteToDropdown(routeObj) {
-      const select = document.getElementById('routeSelect');
-      const opt = document.createElement('option');
-      opt.value = routeObj.id;
-      opt.textContent = '⭐ ' + routeObj.name;
-      select.insertBefore(opt, select.options[1]);
-    }
-
-    function saveCustomRouteToStorage(routeObj) {
+    function saveKMLRoute(routeObj) {
       try {
-        const existing = JSON.parse(localStorage.getItem('sucre_custom_kml_routes') || '[]');
-        existing.push(routeObj);
-        localStorage.setItem('sucre_custom_kml_routes', JSON.stringify(existing));
+        const list = JSON.parse(localStorage.getItem('sucre_micros_kml') || '[]');
+        list.push(routeObj);
+        localStorage.setItem('sucre_micros_kml', JSON.stringify(list));
       } catch (e) {}
     }
 
-    function loadSavedCustomRoutes() {
+    function loadStoredKMLRoutes() {
       try {
-        const saved = JSON.parse(localStorage.getItem('sucre_custom_kml_routes') || '[]');
-        if (Array.isArray(saved) && saved.length > 0) {
-          saved.forEach(r => {
-            ROUTES_DATA.unshift(r);
-            addRouteToDropdown(r);
-          });
+        const list = JSON.parse(localStorage.getItem('sucre_micros_kml') || '[]');
+        if (Array.isArray(list)) {
+          list.forEach(r => MICROS_DATA.unshift(r));
         }
       } catch (e) {}
     }
 
-    // =========================================================================
-    // 8. CALCULADORA, COMPARTIR Y DESCARGA INDEX.HTML
-    // =========================================================================
-    let calcVehicle = 'micro';
-    let calcCounts = { mayor: 0, univ: 0, adultoMayor: 0, escolar: 0 };
+    // Calculadora de Tarifas Micro
+    const fareCounts = { adulto: 0, mayor: 0, univ: 0, escolar: 0 };
+    function addFareCount(type) {
+      fareCounts[type]++;
+      document.getElementById('fc_' + type).textContent = fareCounts[type];
+      const total = (fareCounts.adulto * 4) + (fareCounts.mayor * 3) + (fareCounts.univ * 2) + (fareCounts.escolar * 1);
+      document.getElementById('fc_total').textContent = `Bs ${total}`;
+    }
 
-    function setCalcVehicle(type) {
-      calcVehicle = type;
-      ['micro', 'minibus', 'taxi'].forEach(t => {
-        const btn = document.getElementById('calcVeh_' + t);
-        btn.className = t === type
-          ? 'py-1.5 px-2 rounded-lg text-xs font-bold bg-amber-500 text-slate-950'
-          : 'py-1.5 px-2 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300';
+    function resetFareCalc() {
+      Object.keys(fareCounts).forEach(k => {
+        fareCounts[k] = 0;
+        document.getElementById('fc_' + k).textContent = '0';
       });
-      updateCalcTotal();
+      document.getElementById('fc_total').textContent = 'Bs 0';
     }
 
-    function addPassenger(kind) {
-      calcCounts[kind]++;
-      document.getElementById('count_' + kind).textContent = calcCounts[kind];
-      updateCalcTotal();
-    }
-
-    function resetCalc() {
-      calcCounts = { mayor: 0, univ: 0, adultoMayor: 0, escolar: 0 };
-      Object.keys(calcCounts).forEach(k => document.getElementById('count_' + k).textContent = '0');
-      updateCalcTotal();
-    }
-
-    function updateCalcTotal() {
-      let total = 0;
-      if (calcVehicle === 'micro') {
-        total = (calcCounts.mayor * 4) + (calcCounts.univ * 2) + (calcCounts.adultoMayor * 3) + (calcCounts.escolar * 1);
-      } else if (calcVehicle === 'minibus') {
-        total = (calcCounts.mayor * 3) + (calcCounts.univ * 2) + (calcCounts.adultoMayor * 3) + (calcCounts.escolar * 1);
-      } else if (calcVehicle === 'taxi') {
-        total = (calcCounts.mayor + calcCounts.univ + calcCounts.adultoMayor + calcCounts.escolar) * 5;
-      }
-      document.getElementById('calcTotalDisplay').textContent = `Bs ${total}`;
-    }
-
-    function shareCurrentRoute() {
-      const route = ROUTES_DATA.find(r => r.id === selectedRouteId);
+    function shareRouteWhatsApp() {
+      const route = MICROS_DATA.find(r => r.id === selectedRouteId);
       if (!route) return;
-      const text = `🚌 *${route.name}* (SucreRutas)\n📍 ${route.direction}\n🚏 ${route.stopName}\n💰 ${document.getElementById('cardFareSummary').textContent}`;
+      const msg = `🚌 *${route.name}* (SucreRutas)\n📍 Recorrido: ${route.direction}\n🛣️ Calles: ${route.streets}\n💰 Pasaje Micro: Adulto Bs 4 | Univ Bs 2 | Escolar Bs 1`;
 
       if (navigator.share) {
-        navigator.share({ title: route.name, text }).catch(() => {});
+        navigator.share({ title: route.name, text: msg }).catch(() => {});
       } else {
-        const tempInput = document.createElement('textarea');
-        tempInput.value = text;
-        document.body.appendChild(tempInput);
-        tempInput.select();
+        const el = document.createElement('textarea');
+        el.value = msg;
+        document.body.appendChild(el);
+        el.select();
         document.execCommand('copy');
-        document.body.removeChild(tempInput);
-        showToast('Datos copiados para pegar en WhatsApp');
+        document.body.removeChild(el);
+        showToast('Datos del micro copiados para WhatsApp');
       }
     }
 
-    function locateUserOnMap() {
-      if (!navigator.geolocation) {
-        showToast('GPS no disponible');
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const latlng = [pos.coords.latitude, pos.coords.longitude];
-          map.setView(latlng, 16);
-          L.circleMarker(latlng, {
-            radius: 8,
-            fillColor: '#0284c7',
-            color: '#ffffff',
-            weight: 3,
-            fillOpacity: 1
-          }).addTo(map).bindPopup('Tu ubicación actual').openPopup();
-        },
-        () => showToast('Activa el permiso de ubicación')
-      );
-    }
-
-    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-
-    function showToast(msg) {
-      const toast = document.getElementById('toast');
-      document.getElementById('toastMsg').textContent = msg;
-      toast.classList.remove('hidden');
-      setTimeout(() => toast.classList.add('hidden'), 3000);
-    }
-
-    function downloadStandaloneHTML() {
-      const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    function downloadIndexHTML() {
+      const fullHtml = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+      const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1335,6 +1249,16 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       showToast('Descargado como index.html listo para GitHub');
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function showToast(text) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastText').textContent = text;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3000);
     }
   </script>
 </body>
